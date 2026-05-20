@@ -1,3 +1,54 @@
 spring:
   application:
     name: btllm
+
+  # ── 데이터소스 (pgvector Docker) ──────────────────────────
+  datasource:
+    url: jdbc:postgresql://localhost:5432/btllm
+    username: btllm
+    password: btllm1234
+    driver-class-name: org.postgresql.Driver
+
+  # ── JPA ──────────────────────────────────────────────────
+  jpa:
+    hibernate:
+      ddl-auto: create   # 개발 중 자동 테이블 생성 (운영 시 validate로 변경)
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+  # ── Spring AI - Ollama ────────────────────────────────────
+  ai:
+    ollama:
+      base-url: http://localhost:11434   # Ollama 기본 포트
+      chat:
+        model: exaone3.5:7.8b           # 한국어 채팅 모델
+        options:
+          temperature: 0.7              # 응답 창의성 (0=정확, 1=창의)
+      embedding:
+        model: bge-m3                   # 한국어 임베딩 모델 (RAG용)
+    chat:
+      memory:
+        repository:
+          jdbc:
+            initialize-schema: always
+
+    # ── pgvector 설정 ─────────────────────────────────────
+    vectorstore:
+      pgvector:
+        initialize-schema: true         # 앱 시작 시 vector 테이블 자동 생성
+        index-type: hnsw                # 근사 최근접 이웃 인덱스 (빠른 검색)
+        distance-type: cosine_distance  # 코사인 유사도 (의미 검색에 적합)
+        dimensions: 1024                # bge-m3 벡터 차원수
+
+  # ── Security (개발용 임시 비활성화) ──────────────────────
+  security:
+    user:
+      name: admin
+      password: admin
+
+# ── 서버 포트 ─────────────────────────────────────────────
+server:
+  port: 8080
