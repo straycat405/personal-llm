@@ -1,69 +1,125 @@
 package com.bigteam.btllm.rag.controller;
 
 import com.bigteam.btllm.common.response.ApiResponse;
+import com.bigteam.btllm.rag.dto.EtlJobResponse;
 import com.bigteam.btllm.rag.dto.EtlUrlRequest;
 import com.bigteam.btllm.rag.service.EtlPipelineService;
+import com.bigteam.btllm.rag.service.EtlProgressTracker;
+import com.bigteam.btllm.rag.service.EtlProgressTracker.ProgressInfo;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
+import java.util.Map;
+import java.util.UUID;
 
 /**
- * [역할] ETL 파이프라인 트리거 REST API (관리자용)
+ * [역할] ETL 파이프라인 트리거 REST API + SSE 진행률 스트림
  *
  * [설계 결정사항]
- * - /api/v1/admin/** 경로: 운영 환경에서는 ROLE_ADMIN 권한 분리 필요
- *   Phase 3에서는 인증된 사용자라면 모두 허용 (포트폴리오 시연 목적)
- * - 응답: 적재된 청크 수 반환 → "N개 청크가 벡터 DB에 저장됨" 으로 성공 확인 가능
- * - 동기 처리: 대용량 파일은 HTTP 타임아웃 주의 → 운영 시 비동기 큐 전환
+ * - POST → 202 Accepted + { jobId }: 즉시 반환, ETL은 @Async 스레드에서 처리
+ *   이유: 대용량 PDF 처리 시간이 수 분 → 동기 처리는 HTTP 타임아웃 위험
+ * - GET /{jobId}/progress → SseEmitter: 서버가 진행률 push (클라이언트 폴링 불필요)
+ *   이유: EventSource API가 표준이며 WebSocket보다 단방향 스트리밍에 적합
+ * - SSE 엔드포인트 permitAll: EventSource는 커스텀 헤더 미지원 → JWT 헤더 전송 불가
+ *   UUID jobId가 충분한 난수성으로 대체 (추측 불가)
+ * - SseEmitter 타임아웃 10분: 대용량 문서 처리 여유 시간 확보
+ * - 폴링 간격 500ms: 진행률 체감 부드러움 vs 서버 부하 균형
  */
 @RestController
 @RequestMapping("/api/v1/admin/etl")
 @RequiredArgsConstructor
 public class EtlController {
 
-	private final EtlPipelineService etlPipelineService;
+    private final EtlPipelineService etlPipelineService;
+    private final EtlProgressTracker tracker;
 
-	/**
-	 * 웹 URL 크롤링 후 벡터 DB 적재
-	 * POST /api/v1/admin/etl/url
-	 * Body: { "url": "https://..." }
-	 */
-	@PostMapping("/url")
-	public ResponseEntity<ApiResponse<Integer>> ingestUrl(
-		@Valid @RequestBody EtlUrlRequest request) {
-		int chunks = etlPipelineService.ingestUrl(request.url());
-		return ResponseEntity.ok(ApiResponse.ok(chunks));
-	}
+    // ── POST: 인덱싱 시작 → 202 + jobId ────────────────────────
 
-	/**
-	 * PDF 파일 업로드 후 벡터 DB 적재
-	 * POST /api/v1/admin/etl/pdf (multipart/form-data, field: file)
-	 */
-	@PostMapping("/pdf")
-	public ResponseEntity<ApiResponse<Integer>> ingestPdf(
-		@RequestParam("file") MultipartFile file) throws IOException {
-		int chunks = etlPipelineService.ingestPdf(
-			file.getBytes(),
-			file.getOriginalFilename() != null ? file.getOriginalFilename() : "unknown.pdf"
-		);
-		return ResponseEntity.ok(ApiResponse.ok(chunks));
-	}
+    @PostMapping("/url")
+    public ResponseEntity<ApiResponse<EtlJobResponse>> ingestUrl(
+        @Valid @RequestBody EtlUrlRequest request) {
 
-	/**
-	 * 범용 파일 업로드 후 벡터 DB 적재 (Word, Excel, TXT 등 Tika 지원 형식)
-	 * POST /api/v1/admin/etl/file (multipart/form-data, field: file)
-	 */
-	@PostMapping("/file")
-	public ResponseEntity<ApiResponse<Integer>> ingestFile(
-		@RequestParam("file") MultipartFile file) throws IOException {
-		int chunks = etlPipelineService.ingestFile(
-			file.getBytes(),
-			file.getOriginalFilename() != null ? file.getOriginalFilename() : "unknown"
-		);
-		return ResponseEntity.ok(ApiResponse.ok(chunks));
-	}
+        String jobId = UUID.randomUUID().toString();
+        tracker.init(jobId);
+        etlPipelineService.ingestUrlAsync(request.url(), jobId);
+        return ResponseEntity.accepted().body(ApiResponse.ok(new EtlJobResponse(jobId)));
+    }
+
+    @PostMapping("/pdf")
+    public ResponseEntity<ApiResponse<EtlJobResponse>> ingestPdf(
+        @RequestParam("file") MultipartFile file) throws IOException {
+
+        String jobId = UUID.randomUUID().toString();
+        tracker.init(jobId);
+        etlPipelineService.ingestPdfAsync(
+            file.getBytes(),
+            file.getOriginalFilename() != null ? file.getOriginalFilename() : "unknown.pdf",
+            jobId
+        );
+        return ResponseEntity.accepted().body(ApiResponse.ok(new EtlJobResponse(jobId)));
+    }
+
+    @PostMapping("/file")
+    public ResponseEntity<ApiResponse<EtlJobResponse>> ingestFile(
+        @RequestParam("file") MultipartFile file) throws IOException {
+
+        String jobId = UUID.randomUUID().toString();
+        tracker.init(jobId);
+        etlPipelineService.ingestFileAsync(
+            file.getBytes(),
+            file.getOriginalFilename() != null ? file.getOriginalFilename() : "unknown",
+            jobId
+        );
+        return ResponseEntity.accepted().body(ApiResponse.ok(new EtlJobResponse(jobId)));
+    }
+
+    // ── GET: SSE 진행률 스트림 ────────────────────────────────
+
+    @GetMapping(value = "/{jobId}/progress", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter progress(@PathVariable String jobId) {
+        // [설계] 10분 타임아웃: 대용량 문서 처리 시간 여유 확보
+        SseEmitter emitter = new SseEmitter(10 * 60 * 1000L);
+
+        emitter.onTimeout(emitter::complete);
+        emitter.onError(e -> emitter.complete());
+
+        // [설계] 별도 스레드에서 500ms 폴링: SSE 특성상 응답 스트림을 점유하는 구조
+        //   @Async와 달리 SSE 전용 폴링이므로 단순 Thread 사용 (빈 관리 불필요)
+        new Thread(() -> {
+            try {
+                while (true) {
+                    ProgressInfo info = tracker.get(jobId);
+                    emitter.send(SseEmitter.event()
+                        .name("progress")
+                        .data(Map.of(
+                            "progress", info.progress(),
+                            "message",  info.message(),
+                            "done",     info.done(),
+                            "error",    info.error() != null ? info.error() : ""
+                        )));
+
+                    if (info.done()) {
+                        tracker.remove(jobId);  // 메모리 정리
+                        emitter.complete();
+                        return;
+                    }
+                    Thread.sleep(500);
+                }
+            } catch (IOException e) {
+                // 클라이언트 연결 끊김 — 정상 종료
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } catch (Exception e) {
+                emitter.completeWithError(e);
+            }
+        }).start();
+
+        return emitter;
+    }
 }

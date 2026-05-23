@@ -17,6 +17,7 @@ interface Message {
   id: string              // crypto.randomUUID() — key prop용 안정적 고유 ID
   role: 'user' | 'assistant'
   content: string
+  isError?: boolean       // true면 TOKEN append 대상에서 제외 (StrictMode 이중 연결 방어)
 }
 
 // ── ChatPage ─────────────────────────────────────────────────
@@ -328,8 +329,9 @@ function ChatView({
       setIsWaiting(false)  // 첫 토큰 도착 → 대기 인디케이터 해제
       setMessages((prev) => {
         const last = prev[prev.length - 1]
-        if (last?.role === 'assistant') {
+        if (last?.role === 'assistant' && !last.isError) {
           // 마지막 assistant 메시지에 토큰 누적 (배열 교체로 불변성 유지)
+          // isError 메시지는 제외: StrictMode 이중 실행 시 오류 bubble에 응답이 붙는 현상 방지
           return [...prev.slice(0, -1), { ...last, content: last.content + (res.content ?? '') }]
         }
         // 첫 TOKEN: assistant 메시지 신규 생성
@@ -342,7 +344,7 @@ function ChatView({
       setIsWaiting(false)
       setMessages((prev) => [
         ...prev,
-        { id: crypto.randomUUID(), role: 'assistant', content: `⚠ ${res.message ?? '오류가 발생했습니다.'}` },
+        { id: crypto.randomUUID(), role: 'assistant', content: `⚠ ${res.message ?? '오류가 발생했습니다.'}`, isError: true },
       ])
       setIsStreaming(false)
     }
@@ -350,12 +352,16 @@ function ChatView({
 
   const handleOpen = useCallback(() => {
     setIsConnected(true)
+    // [설계] 재연결 성공 시 오류 메시지 제거:
+    //   React StrictMode 이중 실행 → WS #1 즉시 close → onerror → 에러 bubble 생성
+    //   → WS #2 정상 연결 → onopen → 에러 bubble은 더 이상 유효하지 않으므로 제거
+    setMessages(prev => prev.filter(m => !m.isError))
     // WS 연결 완료 시 대기 중 메시지 자동 전송 (initialMessage 자동 생성 흐름)
     if (pendingRef.current) {
       const msg = pendingRef.current
       pendingRef.current = null
       setIsStreaming(true)
-      setIsWaiting(true)  // 자동 전송 시 대기 시작
+      setIsWaiting(true)
       sendMsgRef.current(msg)
     }
   }, [])

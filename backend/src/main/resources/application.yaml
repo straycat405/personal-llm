@@ -44,6 +44,12 @@ spring:
         distance-type: cosine_distance  # 코사인 유사도 (의미 검색에 적합)
         dimensions: 1024                # bge-m3 벡터 차원수
 
+  # ── 파일 업로드 크기 제한 ────────────────────────────────
+  servlet:
+    multipart:
+      max-file-size: 50MB      # 기본 1MB → PDF·Word 문서 업로드 허용
+      max-request-size: 52MB   # 파일 + 폼 필드 합산 (여유 2MB)
+
   # ── Security (개발용 임시 비활성화) ──────────────────────
   security:
     user:

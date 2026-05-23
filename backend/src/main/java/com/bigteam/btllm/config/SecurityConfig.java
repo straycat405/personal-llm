@@ -54,6 +54,9 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/api/v1/auth/**").permitAll()
                 .requestMatchers("/ws/**").permitAll()
+                // [설계] SSE 엔드포인트 permitAll: EventSource는 커스텀 헤더 미지원
+                //   UUID jobId가 난수성으로 보호 (추측 불가 — 36자리 UUID v4)
+                .requestMatchers("/api/v1/admin/etl/*/progress").permitAll()
                 .anyRequest().authenticated()
             )
             .httpBasic(AbstractHttpConfigurer::disable)
