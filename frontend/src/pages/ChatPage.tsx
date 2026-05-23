@@ -434,14 +434,15 @@ function ChatView({
                 msg.content
               ) : (
                 // assistant 메시지: 마크다운 렌더링
-                <ReactMarkdown
-                  remarkPlugins={[remarkGfm]}
+                <div
                   className="prose prose-invert prose-sm max-w-none
                              prose-p:my-1 prose-li:my-0.5 prose-headings:my-2
                              prose-code:text-violet-300 prose-a:text-violet-400"
                 >
-                  {msg.content}
-                </ReactMarkdown>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {msg.content}
+                  </ReactMarkdown>
+                </div>
               )}
               {/* 스트리밍 커서: 마지막 assistant 메시지에만 표시 */}
               {isStreaming && msg.role === 'assistant' && i === messages.length - 1 && (
