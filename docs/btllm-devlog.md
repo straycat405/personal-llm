@@ -59,7 +59,7 @@ GitHub: straycat405/personal-llm
 ### Phase 2 — WebSocket 스트리밍 + Advisor 체인
 **목표:** LLM 실시간 스트리밍 + Spring AI Advisor 5종 적용
 
-**상태:** 미시작 (Phase 1 완료 후)
+**✅ 완료 (2026-05-23)**
 
 구현 목록:
 - `ChatWebSocketHandler` 구현 (Flux 스트리밍)
@@ -201,3 +201,30 @@ Usage (Interface):
 - Ollama 기동 확인 (exaone3.5:7.8b, bge-m3)
 - Docker + 백엔드 기동 후 WebSocket 스트리밍 E2E 테스트
 - React 채팅 UI WebSocket 연결 구현
+
+---
+
+### 2026-05-23 — Phase 3 ETL 파이프라인 컴파일 오류 해결
+
+#### 문제 상황
+
+`EtlPipelineService.java` 빌드 시 3개 오류:
+```
+package org.springframework.ai.jsoup does not exist
+package org.springframework.ai.pdf.reader does not exist
+```
+
+#### 원인 및 해결
+
+Phase 2와 동일한 패턴 — Context7 문서의 패키지 경로가 실제 JAR과 상이.
+
+JAR ZipFile 추출로 실제 패키지 확인:
+
+| 클래스 | 문서 기준 (틀림) | JAR 실제 (맞음) |
+|---|---|---|
+| `JsoupDocumentReader` | `org.springframework.ai.jsoup` | `org.springframework.ai.reader.jsoup` |
+| `JsoupDocumentReaderConfig` | `org.springframework.ai.jsoup` | `org.springframework.ai.reader.jsoup.config` |
+| `PagePdfDocumentReader` | `org.springframework.ai.pdf.reader` | `org.springframework.ai.reader.pdf` |
+| `TikaDocumentReader` | — | `org.springframework.ai.reader.tika` (최초 정확) |
+
+**교훈:** Spring AI 문서 패키지 경로는 신뢰 불가. 신규 의존성 추가 시 JAR 직접 검증 루틴화.
