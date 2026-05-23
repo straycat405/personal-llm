@@ -24,7 +24,7 @@ spring:
     ollama:
       base-url: http://localhost:11434   # Ollama 기본 포트
       chat:
-        model: exaone3.5:7.8b           # 한국어 채팅 모델
+        model: qwen2.5:7b
         options:
           temperature: 0.7              # 응답 창의성 (0=정확, 1=창의)
       embedding:

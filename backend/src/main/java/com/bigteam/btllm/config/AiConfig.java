@@ -1,11 +1,11 @@
 package com.bigteam.btllm.config;
 
+import com.bigteam.btllm.chat.advisor.SafeQuestionAnswerAdvisor;
 import com.bigteam.btllm.chat.advisor.TokenTrackingAdvisor;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.client.advisor.SafeGuardAdvisor;
 import org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor;
-import org.springframework.ai.chat.client.advisor.vectorstore.QuestionAnswerAdvisor;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.ollama.OllamaChatModel;
 import org.springframework.ai.vectorstore.SearchRequest;
@@ -43,7 +43,11 @@ public class AiConfig {
 		VectorStore vectorStore,
 		TokenTrackingAdvisor tokenTrackingAdvisor) {
 		return ChatClient.builder(ollamaChatModel)
-			.defaultSystem("당신은 유용한 AI 어시스턴트입니다. 한국어로 답변해주세요.")
+			.defaultSystem("""
+				당신은 유용한 AI 어시스턴트입니다.
+				반드시 한국어로만 답변하세요. 중국어·영어 등 다른 언어는 절대 사용하지 마세요.
+				도구 호출 결과를 받은 경우에도 반드시 한국어로 해석하여 답변하세요.
+				""")
 			.defaultAdvisors(
 
 				// ① 부적절 입력 필터 — LLM 호출 전 가장 먼저 실행
@@ -54,13 +58,11 @@ public class AiConfig {
 					.build(),
 
 				// ② pgVector 검색 후 관련 청크를 프롬프트에 주입 — SafeGuard 통과 후 즉시
-				QuestionAnswerAdvisor.builder(vectorStore)
-					.searchRequest(SearchRequest.builder()
-						.topK(5)                  // 상위 5개 청크
-						.similarityThreshold(0.5) // 유사도 0.5 미만 청크 제외
-						.build())
-					.order(Ordered.HIGHEST_PRECEDENCE + 1)
-					.build(),
+				new SafeQuestionAnswerAdvisor(
+					vectorStore,
+					SearchRequest.builder().topK(5).similarityThreshold(0.5).build(),
+					Ordered.HIGHEST_PRECEDENCE + 1
+				),
 
 				// ③ 대화 맥락 자동 주입 — conversationId는 요청 시 파라미터로 전달
 				MessageChatMemoryAdvisor.builder(chatMemory)

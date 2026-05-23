@@ -35,7 +35,16 @@ export default function ChatPage() {
       navigate('/login')
       return
     }
-    getChatRooms().then((res) => setRooms(res.data.data ?? []))
+    getChatRooms()
+      .then((res) => setRooms(res.data.data ?? []))
+      .catch((err) => {
+        // 토큰 만료 또는 서버에 해당 사용자 없음(DB 리셋 등) → 강제 로그아웃
+        const status = err?.response?.status
+        if (status === 401 || status === 403 || status === 404) {
+          logout()
+          navigate('/login')
+        }
+      })
   }, [])  // eslint-disable-line react-hooks/exhaustive-deps
 
   // [설계] 첫 메시지 입력 → 채팅방 자동 생성: LLM 서비스(Claude, ChatGPT) UX 패턴

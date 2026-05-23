@@ -3,6 +3,7 @@ package com.bigteam.btllm.chat.controller;
 import com.bigteam.btllm.chat.dto.WsRequest;
 import com.bigteam.btllm.chat.dto.WsResponse;
 import com.bigteam.btllm.chat.repository.ChatRoomRepository;
+import com.bigteam.btllm.chat.tools.LlmTools;
 import com.bigteam.btllm.common.jwt.JwtProvider;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.jsonwebtoken.Claims;
@@ -16,6 +17,9 @@ import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
+
+import com.bigteam.btllm.chat.tools.LlmTools;
+import java.util.Map;
 
 import java.io.IOException;
 
@@ -44,6 +48,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
     private final ChatRoomRepository chatRoomRepository;
     private final JwtProvider jwtProvider;
     private final ObjectMapper objectMapper;
+    private final LlmTools llmTools;  // [역할] LLM Tool Calling 3종 (크롤러·히스토리검색·사용량조회)
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) throws Exception {
@@ -86,23 +91,34 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         }
 
         // Spring AI 스트리밍 시작
+        // [설계] .tools()로 Tool 등록, .toolContext()로 conversationId 주입
+        //        ToolContext는 LLM 파라미터 스키마에 포함되지 않으므로 내부 식별자 노출 없음
         chatClient.prompt()
             .user(request.content())
             .advisors(spec -> spec.param(
                 ChatMemory.CONVERSATION_ID,
                 request.conversationId()))
+            .tools(llmTools)
+            .toolContext(Map.of("conversationId", request.conversationId()))
             .stream()
-            .content() // Flux<String> — TokenTrackingAdvisor가 토큰 저장 담당
+            .chatResponse()                               // ← content() → chatResponse()
             .subscribe(
-                // 토큰 조각 클라이언트 전송
-                token -> sendSafe(session, WsResponse.token(token)),
-                // LLM 오류 처리
+                response -> {
+                    if (response.getResult() == null) return;
+                    var output = response.getResult().getOutput();
+                    if (output == null) return;
+                    // 도구 호출 청크: toolCalls 존재 → 클라이언트 미전송 (XML 노출 방지)
+                    if (!output.getToolCalls().isEmpty()) return;
+                    String text = output.getText();
+                    if (text != null && !text.isBlank()) {
+                        sendSafe(session, WsResponse.token(text));
+                    }
+                },
                 error -> {
                     log.error("LLM 스트리밍 오류 — session: {}, error: {}",
                         session.getId(), error.getMessage());
                     sendSafe(session, WsResponse.error("AI 응답 중 오류가 발생했습니다."));
                 },
-                // 스트리밍 완료
                 () -> sendSafe(session, WsResponse.done(null, null, null))
             );
     }
