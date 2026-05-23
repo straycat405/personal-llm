@@ -6,6 +6,11 @@ import { createChatRoom, deleteChatRoom, getChatRooms } from '@/api/chatRoom'
 import { useWebSocket } from '@/hooks/useWebSocket'
 import type { WsResponse } from '@/hooks/useWebSocket'
 import type { ChatRoomResponse } from '@/types'
+import TypingIndicator from '@/components/TypingIndicator'
+import SkeletonRoom from '@/components/SkeletonRoom'
+import RagUploadModal from '@/components/RagUploadModal'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 
 // ── 로컬 타입 ────────────────────────────────────────────────
 interface Message {
@@ -29,6 +34,8 @@ export default function ChatPage() {
   const [newTitle, setNewTitle] = useState('')
   const [creating, setCreating] = useState(false)
   const [initialMsg, setInitialMsg] = useState<string | null>(null)
+  const [roomsLoading, setRoomsLoading] = useState(true)  // 채팅방 목록 초기 로딩
+  const [ragOpen, setRagOpen] = useState(false)            // 문서 인덱싱 모달 표시
 
   useEffect(() => {
     if (!isAuthenticated()) {
@@ -45,6 +52,7 @@ export default function ChatPage() {
           navigate('/login')
         }
       })
+      .finally(() => setRoomsLoading(false))  // 성공·실패 무관하게 로딩 해제
   }, [])  // eslint-disable-line react-hooks/exhaustive-deps
 
   // [설계] 첫 메시지 입력 → 채팅방 자동 생성: LLM 서비스(Claude, ChatGPT) UX 패턴
@@ -120,31 +128,46 @@ export default function ChatPage() {
 
         {/* 채팅방 목록 */}
         <ul className="flex-1 overflow-y-auto p-2 flex flex-col gap-1">
-          {rooms.length === 0 && (
+          {roomsLoading ? (
+            // 스켈레톤: 초기 로딩 중 shimmer UI
+            <>
+              <SkeletonRoom />
+              <SkeletonRoom />
+              <SkeletonRoom />
+            </>
+          ) : rooms.length === 0 ? (
             <li className="text-gray-600 text-xs text-center py-4">채팅방을 만들어보세요</li>
+          ) : (
+            rooms.map((room) => (
+              <li
+                key={room.id}
+                onClick={() => handleSelectRoom(room)}
+                className={`group flex justify-between items-center px-3 py-2 rounded-lg
+                            cursor-pointer text-sm transition select-none
+                            ${selectedRoom?.id === room.id
+                              ? 'bg-gray-700 text-white'
+                              : 'text-gray-400 hover:bg-gray-800 hover:text-white'}`}
+              >
+                <span className="truncate">{room.title}</span>
+                <button
+                  onClick={(e) => handleDeleteRoom(room.id, e)}
+                  className="opacity-0 group-hover:opacity-100 text-gray-500
+                             hover:text-red-400 ml-2 text-xs transition"
+                  title="삭제"
+                >✕</button>
+              </li>
+            ))
           )}
-          {rooms.map((room) => (
-            <li
-              key={room.id}
-              onClick={() => handleSelectRoom(room)}
-              className={`group flex justify-between items-center px-3 py-2 rounded-lg
-                          cursor-pointer text-sm transition select-none
-                          ${selectedRoom?.id === room.id
-                            ? 'bg-gray-700 text-white'
-                            : 'text-gray-400 hover:bg-gray-800 hover:text-white'}`}
-            >
-              <span className="truncate">{room.title}</span>
-              <button
-                onClick={(e) => handleDeleteRoom(room.id, e)}
-                className="opacity-0 group-hover:opacity-100 text-gray-500
-                           hover:text-red-400 ml-2 text-xs transition"
-                title="삭제"
-              >✕</button>
-            </li>
-          ))}
         </ul>
 
-        <div className="p-3 border-t border-gray-800">
+        <div className="p-3 border-t border-gray-800 flex flex-col gap-1">
+          <button
+            onClick={() => setRagOpen(true)}
+            className="w-full text-left text-gray-400 hover:text-white text-sm
+                       py-1.5 px-2 transition rounded-lg hover:bg-gray-800"
+          >
+            문서 인덱싱
+          </button>
           <button
             onClick={handleLogout}
             className="w-full text-gray-500 hover:text-white text-sm py-1.5
@@ -167,6 +190,9 @@ export default function ChatPage() {
           : <WelcomeView onSubmit={handleWelcomeSubmit} />
         }
       </main>
+
+      {/* RAG 문서 인덱싱 모달 */}
+      {ragOpen && <RagUploadModal onClose={() => setRagOpen(false)} />}
     </div>
   )
 }
@@ -267,6 +293,7 @@ function ChatView({
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
+  const [isWaiting, setIsWaiting] = useState(false)  // 전송 후 첫 토큰 도착 전 대기
   const [isConnected, setIsConnected] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const pendingRef = useRef<string | null>(null)
@@ -282,6 +309,7 @@ function ChatView({
 
   const handleWsMessage = useCallback((res: WsResponse) => {
     if (res.type === 'TOKEN') {
+      setIsWaiting(false)  // 첫 토큰 도착 → 대기 인디케이터 해제
       setMessages((prev) => {
         const last = prev[prev.length - 1]
         if (last?.role === 'assistant') {
@@ -292,8 +320,10 @@ function ChatView({
         return [...prev, { role: 'assistant', content: res.content ?? '' }]
       })
     } else if (res.type === 'DONE') {
+      setIsWaiting(false)
       setIsStreaming(false)
     } else if (res.type === 'ERROR') {
+      setIsWaiting(false)
       setMessages((prev) => [
         ...prev,
         { role: 'assistant', content: `⚠ ${res.message ?? '오류가 발생했습니다.'}` },
@@ -309,6 +339,7 @@ function ChatView({
       const msg = pendingRef.current
       pendingRef.current = null
       setIsStreaming(true)
+      setIsWaiting(true)  // 자동 전송 시 대기 시작
       sendMsgRef.current(msg)
     }
   }, [])
@@ -334,6 +365,7 @@ function ChatView({
     if (!content.trim() || isStreaming || !isConnected) return
     setMessages((prev) => [...prev, { role: 'user', content }])
     setIsStreaming(true)
+    setIsWaiting(true)  // 전송 → 대기 시작
     sendMessage(content)
     setInput('')
   }
@@ -381,7 +413,20 @@ function ChatView({
                   : 'bg-gray-800 text-gray-100 rounded-bl-sm'
               }`}
             >
-              {msg.content}
+              {msg.role === 'user' ? (
+                // 사용자 메시지: 마크다운 불필요, 입력 그대로 출력
+                msg.content
+              ) : (
+                // assistant 메시지: 마크다운 렌더링
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  className="prose prose-invert prose-sm max-w-none
+                             prose-p:my-1 prose-li:my-0.5 prose-headings:my-2
+                             prose-code:text-violet-300 prose-a:text-violet-400"
+                >
+                  {msg.content}
+                </ReactMarkdown>
+              )}
               {/* 스트리밍 커서: 마지막 assistant 메시지에만 표시 */}
               {isStreaming && msg.role === 'assistant' && i === messages.length - 1 && (
                 <span className="inline-block w-0.5 h-4 bg-violet-400 ml-0.5 animate-pulse align-middle" />
@@ -389,6 +434,8 @@ function ChatView({
             </div>
           </div>
         ))}
+        {/* 응답 대기 스피너: 전송 후 첫 토큰 도착 전 */}
+        {isWaiting && <TypingIndicator />}
         <div ref={bottomRef} />
       </div>
 
