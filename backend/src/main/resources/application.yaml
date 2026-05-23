@@ -4,7 +4,7 @@ spring:
 
   # ── 데이터소스 (pgvector Docker) ──────────────────────────
   datasource:
-    url: jdbc:postgresql://localhost:5432/btllm
+    url: jdbc:postgresql://localhost:5433/btllm
     username: btllm
     password: btllm1234
     driver-class-name: org.postgresql.Driver

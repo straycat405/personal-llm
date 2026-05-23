@@ -15,7 +15,7 @@ GitHub: straycat405/personal-llm
 | LLM (로컬) | Ollama — exaone3.5:7.8b |
 | 임베딩 | Ollama — bge-m3 (1024차원) |
 | DB | PostgreSQL + pgVector |
-| Frontend | React (미시작) |
+| Frontend | React (Vite + TypeScript + Tailwind CSS) |
 
 ---
 
@@ -41,15 +41,18 @@ GitHub: straycat405/personal-llm
 | Config: WebSocketConfig | `config/WebSocketConfig.java` | 2026-05-20 |
 | 아키텍처 다이어그램 HTML | `portfolio/images/btllm-architecture.html` | 2026-05-23 |
 
-#### ❌ 미완 (다음 작업 대상)
-| 항목 | 우선순위 | 비고 |
-|---|---|---|
-| `ChatWebSocketHandler` | ★★★ 최우선 | WebSocketConfig 참조 → 현재 **컴파일 에러** |
-| `UserService` + `AuthController` | ★★★ | 회원가입 / 로그인 REST API |
-| JWT 필터 (`JwtAuthFilter`) | ★★★ | `SecurityConfig`에 추가 |
-| `ChatRoomService` + `ChatRoomController` | ★★ | 방 생성·조회·삭제 |
-| `docker-compose.yml` | ★★ | PostgreSQL + pgVector 로컬 개발 환경 |
-| Frontend React 기본 구조 | ★ | Vite + React 세팅 (Phase 1 마무리) |
+#### ✅ Phase 1 전체 완료 (2026-05-23)
+| 항목 | 비고 |
+|---|---|
+| `ChatWebSocketHandler` 스텁 | Phase 2 교체 예정 |
+| `JwtProvider` + `JwtAuthFilter` + `AuthUser` | HMAC-SHA, User Enumeration 방지 |
+| `UserService` + `AuthController` | 회원가입/로그인 REST API |
+| `ChatRoomService` + `ChatRoomController` | UUID conversationId, 소유자 검증 |
+| `BusinessException` + `ErrorCode` + `GlobalExceptionHandler` | 예외 처리 중앙화 |
+| `ApiResponse<T>` 공통 래퍼 | 응답 형식 통일 |
+| `docker-compose.yml` | pgvector:pg17, 포트 5433 (로컬 PG18 충돌 우회) |
+| React 기본 구조 | Vite + TS + Tailwind + Zustand + React Router |
+| End-to-End 기동 테스트 | 회원가입 → 로그인 → 채팅방 UI 동작 확인 ✅ |
 
 ---
 
@@ -85,22 +88,24 @@ GitHub: straycat405/personal-llm
 
 ## 세션별 작업 기록
 
-### 2026-05-23
+### 2026-05-23 — Phase 1 완료
 
 **작업 내용:**
 - BTLLM 리뉴얼 작업 공간 확인 (`projects/btllm`)
-- 현재 코드 상태 전수 조사
+- 현재 코드 상태 전수 조사 → 빌드 불가 상태 확인 및 복구
 - 아키텍처 다이어그램 HTML 생성 (`images/btllm-architecture.html`)
-- 개발 일지(이 파일) 생성
+- Phase 1 전체 백엔드 구현 완료
+- React 프론트엔드 기본 구조 완성
+- End-to-End 기동 테스트 통과
 
-**발견 사항:**
-- Spring Boot 3.5.14 + Java 17 세팅 이미 완료
-- Entity 3종 + Repository 3종 + Config 3종 이미 커밋됨
-- `WebSocketConfig`가 `ChatWebSocketHandler`를 import → 파일 없어서 **빌드 불가** 상태
-- Frontend 디렉토리 비어있음
+**트러블슈팅:**
+1. `ChatWebSocketHandler` 누락 → 컴파일 에러 → 스텁 생성으로 해결
+2. PostgreSQL 비밀번호 인증 실패
+   - 원인: 로컬 PostgreSQL 18이 5432 선점 → Docker 컨테이너 대신 로컬 PG에 접속
+   - 해결: docker-compose.yml 포트 `5432→5433` 변경, application.yaml 동기화
 
-**다음 세션 시작점:**
-1. `ChatWebSocketHandler` 스텁 생성 → 빌드 통과 복구
-2. `docker-compose.yml` 작성 → DB 기동 확인
-3. `UserService` + `AuthController` (회원가입/로그인)
-4. JWT 필터 추가
+**다음 세션 시작점: Phase 2**
+- Ollama 기동 확인 (exaone3.5:7.8b, bge-m3 모델 pull)
+- `ChatWebSocketHandler` 실 구현 (Spring AI ChatClient + Flux 스트리밍)
+- Spring AI Advisor 체인 적용 (SafeGuard → Memory → TokenTracking → Logger)
+- React 채팅 UI WebSocket 연결 구현
