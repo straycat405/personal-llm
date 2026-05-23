@@ -65,7 +65,11 @@ export function useWebSocket({
       }
     }
     ws.onclose = () => onCloseRef.current?.()
-    ws.onerror = () => console.error('WebSocket 연결 오류')
+    ws.onerror = () => {
+      console.error('WebSocket 연결 오류')
+      // onMessage ERROR 타입으로 전달 → ChatView에서 사용자에게 표시
+      onMessageRef.current({ type: 'ERROR', message: 'WebSocket 연결이 끊어졌습니다.' })
+    }
 
     // cleanup: 방 전환 또는 언마운트 시 연결 닫기
     return () => ws.close()

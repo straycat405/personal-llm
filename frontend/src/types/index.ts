@@ -21,3 +21,11 @@ export interface ChatRoomResponse {
   createdAt: string
   updatedAt: string
 }
+
+// 백엔드 ChatHistoryResponse와 1:1 대응
+export interface ChatHistoryResponse {
+  id: number
+  role: 'USER' | 'ASSISTANT'  // Java enum → 대문자 그대로 직렬화
+  content: string
+  createdAt: string
+}

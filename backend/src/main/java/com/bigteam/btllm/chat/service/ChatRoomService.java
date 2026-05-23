@@ -1,8 +1,10 @@
 package com.bigteam.btllm.chat.service;
 
+import com.bigteam.btllm.chat.dto.ChatHistoryResponse;
 import com.bigteam.btllm.chat.dto.ChatRoomCreateRequest;
 import com.bigteam.btllm.chat.dto.ChatRoomResponse;
 import com.bigteam.btllm.chat.entity.ChatRoom;
+import com.bigteam.btllm.chat.repository.ChatHistoryRepository;
 import com.bigteam.btllm.chat.repository.ChatRoomRepository;
 import com.bigteam.btllm.common.exception.BusinessException;
 import com.bigteam.btllm.common.exception.ErrorCode;
@@ -33,6 +35,7 @@ public class ChatRoomService {
 
 	private final ChatRoomRepository chatRoomRepository;
 	private final UserRepository userRepository;
+	private final ChatHistoryRepository chatHistoryRepository;
 
 	@Transactional
 	public ChatRoomResponse create(Long userId, ChatRoomCreateRequest request) {
@@ -68,4 +71,22 @@ public class ChatRoomService {
 
 		chatRoomRepository.delete(room);
 	}
+
+	// 채팅방 대화 이력 조회 — 소유자 검증 후 시간순 반환
+	@Transactional(readOnly = true)
+	public List<ChatHistoryResponse> findHistories(Long userId, Long roomId) {
+		// 소유자 확인: 타 사용자 이력 노출 방지
+		ChatRoom room = chatRoomRepository.findById(roomId)
+			.orElseThrow(() -> new BusinessException(ErrorCode.CHAT_ROOM_NOT_FOUND));
+		if (!room.getUser().getId().equals(userId)) {
+			throw new BusinessException(ErrorCode.CHAT_ROOM_FORBIDDEN);
+		}
+		// Repository 메서드 이미 존재 (시간순 정렬)
+		return chatHistoryRepository.findByChatRoomIdOrderByCreatedAtAsc(roomId)
+			.stream()
+			.map(ChatHistoryResponse::from)
+			.toList();
+	}
+
+
 }

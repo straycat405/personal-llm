@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '@/stores/authStore'
 import { useChatStore } from '@/stores/chatStore'
-import { createChatRoom, deleteChatRoom, getChatRooms } from '@/api/chatRoom'
+import { createChatRoom, deleteChatRoom, getChatRooms, getChatHistories } from '@/api/chatRoom'
 import { useWebSocket } from '@/hooks/useWebSocket'
 import type { WsResponse } from '@/hooks/useWebSocket'
 import type { ChatRoomResponse } from '@/types'
@@ -14,6 +14,7 @@ import remarkGfm from 'remark-gfm'
 
 // ── 로컬 타입 ────────────────────────────────────────────────
 interface Message {
+  id: string              // crypto.randomUUID() — key prop용 안정적 고유 ID
   role: 'user' | 'assistant'
   content: string
 }
@@ -299,11 +300,26 @@ function ChatView({
   const pendingRef = useRef<string | null>(null)
   const sendMsgRef = useRef<(content: string) => void>(() => {})
 
-  // 마운트 시 initialMessage 처리 (자동 생성 흐름의 첫 메시지)
+  // 마운트 시 처리: initialMessage(자동 생성 흐름) 또는 기존 이력 로드
+  // key={room.id}로 방 전환마다 재마운트 → 매번 올바른 이력 fetch
   useEffect(() => {
     if (initialMessage) {
-      setMessages([{ role: 'user', content: initialMessage }])
+      // 새로 생성된 방: 첫 메시지 낙관적 표시 후 WS 연결 시 자동 전송
+      setMessages([{ id: crypto.randomUUID(), role: 'user', content: initialMessage }])
       pendingRef.current = initialMessage
+    } else {
+      // 기존 방 선택: DB 저장 이력 로드 (USER→user, ASSISTANT→assistant 변환)
+      // DB id(number)를 string으로 변환해 Message.id로 사용 → 새 메시지 UUID와 충돌 없음
+      getChatHistories(room.id)
+        .then((res) => {
+          const histories = res.data.data ?? []
+          setMessages(histories.map((h) => ({
+            id: String(h.id),
+            role: h.role === 'USER' ? 'user' : 'assistant' as const,
+            content: h.content,
+          })))
+        })
+        .catch(() => {})  // 이력 로드 실패 시 빈 상태로 시작
     }
   }, [])  // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -317,7 +333,7 @@ function ChatView({
           return [...prev.slice(0, -1), { ...last, content: last.content + (res.content ?? '') }]
         }
         // 첫 TOKEN: assistant 메시지 신규 생성
-        return [...prev, { role: 'assistant', content: res.content ?? '' }]
+        return [...prev, { id: crypto.randomUUID(), role: 'assistant', content: res.content ?? '' }]
       })
     } else if (res.type === 'DONE') {
       setIsWaiting(false)
@@ -326,7 +342,7 @@ function ChatView({
       setIsWaiting(false)
       setMessages((prev) => [
         ...prev,
-        { role: 'assistant', content: `⚠ ${res.message ?? '오류가 발생했습니다.'}` },
+        { id: crypto.randomUUID(), role: 'assistant', content: `⚠ ${res.message ?? '오류가 발생했습니다.'}` },
       ])
       setIsStreaming(false)
     }
@@ -363,7 +379,7 @@ function ChatView({
 
   const handleSend = (content: string) => {
     if (!content.trim() || isStreaming || !isConnected) return
-    setMessages((prev) => [...prev, { role: 'user', content }])
+    setMessages((prev) => [...prev, { id: crypto.randomUUID(), role: 'user', content }])
     setIsStreaming(true)
     setIsWaiting(true)  // 전송 → 대기 시작
     sendMessage(content)
@@ -402,7 +418,7 @@ function ChatView({
         )}
         {messages.map((msg, i) => (
           <div
-            key={i}
+            key={msg.id}
             className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
           >
             <div

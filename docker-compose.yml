@@ -1,5 +1,7 @@
 services:
-  postgres:
+
+  # ── PostgreSQL + pgvector ────────────────────────────────────
+  db:
     image: pgvector/pgvector:pg17
     container_name: btllm-postgres
     environment:
@@ -7,14 +9,37 @@ services:
       POSTGRES_USER: btllm
       POSTGRES_PASSWORD: btllm1234
     ports:
-      - "5433:5432"
+      - "5433:5432"   # 로컬 기본 5432 충돌 방지 (개발 환경과 동일 포트)
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U btllm -d btllm"]
-      interval: 10s
+      interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
+
+  # ── Spring Boot 백엔드 ───────────────────────────────────────
+  # [사전 조건] Ollama 로컬 설치 필요: https://ollama.com
+  #   ollama pull qwen3:8b
+  #   ollama pull bge-m3
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: btllm-backend
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/btllm
+      SPRING_DATASOURCE_USERNAME: btllm
+      SPRING_DATASOURCE_PASSWORD: btllm1234
+      # [설계] host.docker.internal: 컨테이너 → 호스트 로컬 Ollama 접근
+      SPRING_AI_OLLAMA_BASE_URL: http://host.docker.internal:11434
+      JWT_SECRET: ${JWT_SECRET:-btllm-dev-secret-change-in-production}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: on-failure
 
 volumes:
   postgres_data:

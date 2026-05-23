@@ -1,5 +1,6 @@
 package com.bigteam.btllm.chat.controller;
 
+import com.bigteam.btllm.chat.dto.ChatHistoryResponse;
 import com.bigteam.btllm.chat.dto.ChatRoomCreateRequest;
 import com.bigteam.btllm.chat.dto.ChatRoomResponse;
 import com.bigteam.btllm.chat.service.ChatRoomService;
@@ -50,5 +51,14 @@ public class ChatRoomController {
 		@PathVariable Long roomId) {
 		chatRoomService.delete(authUser.id(), roomId);
 		return ResponseEntity.noContent().build();
+	}
+
+	@GetMapping("/{roomId}/histories")
+	public ResponseEntity<ApiResponse<List<ChatHistoryResponse>>> findHistories(
+		@AuthenticationPrincipal AuthUser authUser,
+		@PathVariable Long roomId) {
+		return ResponseEntity.ok(
+			ApiResponse.ok(chatRoomService.findHistories(authUser.id(), roomId))
+		);
 	}
 }
