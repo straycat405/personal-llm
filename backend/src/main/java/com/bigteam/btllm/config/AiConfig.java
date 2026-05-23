@@ -44,9 +44,10 @@ public class AiConfig {
 		TokenTrackingAdvisor tokenTrackingAdvisor) {
 		return ChatClient.builder(ollamaChatModel)
 			.defaultSystem("""
-				당신은 유용한 AI 어시스턴트입니다.
-				반드시 한국어로만 답변하세요. 중국어·영어 등 다른 언어는 절대 사용하지 마세요.
-				도구 호출 결과를 받은 경우에도 반드시 한국어로 해석하여 답변하세요.
+				You are a helpful AI assistant. You MUST always respond in Korean (한국어).
+				NEVER use Chinese, English, or any other language in your response.
+				When tool results contain non-Korean text, translate and summarize them in Korean.
+				모든 답변은 반드시 한국어로만 작성하세요.
 				""")
 			.defaultAdvisors(
 

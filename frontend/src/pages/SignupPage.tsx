@@ -4,7 +4,7 @@ import { signup } from '@/api/auth'
 
 export default function SignupPage() {
   const navigate = useNavigate()
-  const [form, setForm] = useState({ username: '', password: '', email: '' })
+  const [form, setForm] = useState({ email: '', password: '' })
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -13,7 +13,7 @@ export default function SignupPage() {
     setError('')
     setLoading(true)
     try {
-      await signup(form.username, form.password, form.email)
+      await signup(form.email, form.password)
       // 가입 성공 후 로그인 페이지로 이동 (자동 로그인 미적용: 명시적 로그인 유도)
       navigate('/login')
     } catch (err: unknown) {
@@ -30,25 +30,6 @@ export default function SignupPage() {
       <div className="w-full max-w-sm bg-gray-900 rounded-xl p-8 border border-gray-800">
         <h1 className="text-2xl font-bold text-white mb-6">회원가입</h1>
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-          <div>
-            <input
-              className="w-full bg-gray-800 text-white rounded-lg px-4 py-2.5 outline-none
-                         focus:ring-2 focus:ring-violet-500 placeholder-gray-600"
-              placeholder="아이디 (3~50자)"
-              autoComplete="username"
-              value={form.username}
-              onChange={(e) => setForm({ ...form, username: e.target.value })}
-            />
-          </div>
-          <input
-            type="password"
-            className="bg-gray-800 text-white rounded-lg px-4 py-2.5 outline-none
-                       focus:ring-2 focus:ring-violet-500 placeholder-gray-600"
-            placeholder="비밀번호 (8자 이상)"
-            autoComplete="new-password"
-            value={form.password}
-            onChange={(e) => setForm({ ...form, password: e.target.value })}
-          />
           <input
             type="email"
             className="bg-gray-800 text-white rounded-lg px-4 py-2.5 outline-none
@@ -57,6 +38,15 @@ export default function SignupPage() {
             autoComplete="email"
             value={form.email}
             onChange={(e) => setForm({ ...form, email: e.target.value })}
+          />
+          <input
+            type="password"
+            className="bg-gray-800 text-white rounded-lg px-4 py-2.5 outline-none
+                       focus:ring-2 focus:ring-violet-500 placeholder-gray-600"
+            placeholder="비밀번호 (8자 이상)"
+            autoComplete="new-password"
+            value={form.password}
+            onChange={(e) => setForm({ ...form, password: e.target.value })}
           />
           {error && <p className="text-red-400 text-sm">{error}</p>}
           <button

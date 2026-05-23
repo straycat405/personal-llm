@@ -30,10 +30,10 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         if (StringUtils.hasText(token) && jwtProvider.isValid(token)) {
             Claims claims = jwtProvider.validateAndGetClaims(token);
             Long userId = Long.valueOf(claims.getSubject());
-            String username = claims.get("username", String.class);
+            String email = claims.get("email", String.class);
 
             var auth = new UsernamePasswordAuthenticationToken(
-                    new AuthUser(userId, username),
+                    new AuthUser(userId, email),
                     null,
                     List.of(new SimpleGrantedAuthority("ROLE_USER"))
             );

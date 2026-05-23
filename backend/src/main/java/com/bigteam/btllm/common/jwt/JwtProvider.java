@@ -24,11 +24,12 @@ public class JwtProvider {
         this.accessTokenMs = accessTokenMs;
     }
 
-    public String createAccessToken(Long userId, String username) {
+    // [설계] claim "email": OAuth 연동 시 provider email과 동일한 키 사용 → 통일성 확보
+    public String createAccessToken(Long userId, String email) {
         Date now = new Date();
         return Jwts.builder()
                 .subject(String.valueOf(userId))
-                .claim("username", username)
+                .claim("email", email)
                 .issuedAt(now)
                 .expiration(new Date(now.getTime() + accessTokenMs))
                 .signWith(key)

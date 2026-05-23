@@ -6,7 +6,7 @@ import { useAuthStore } from '@/stores/authStore'
 export default function LoginPage() {
   const navigate = useNavigate()
   const { login: storeLogin } = useAuthStore()
-  const [form, setForm] = useState({ username: '', password: '' })
+  const [form, setForm] = useState({ email: '', password: '' })
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -15,7 +15,7 @@ export default function LoginPage() {
     setError('')
     setLoading(true)
     try {
-      const res = await login(form.username, form.password)
+      const res = await login(form.email, form.password)
       // 백엔드 ApiResponse<LoginResponse>.data.accessToken 추출
       storeLogin(res.data.data!.accessToken)
       navigate('/chat')
@@ -35,12 +35,13 @@ export default function LoginPage() {
         <p className="text-gray-500 text-sm mb-6">AI 어시스턴트에 로그인하세요</p>
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <input
+            type="email"
             className="bg-gray-800 text-white rounded-lg px-4 py-2.5 outline-none
                        focus:ring-2 focus:ring-violet-500 placeholder-gray-600"
-            placeholder="아이디"
-            autoComplete="username"
-            value={form.username}
-            onChange={(e) => setForm({ ...form, username: e.target.value })}
+            placeholder="이메일"
+            autoComplete="email"
+            value={form.email}
+            onChange={(e) => setForm({ ...form, email: e.target.value })}
           />
           <input
             type="password"

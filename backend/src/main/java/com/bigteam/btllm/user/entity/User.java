@@ -22,15 +22,16 @@ public class User {
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
 	private Long id;
 
-	// 로그인 식별자 (unique)
-	@Column(nullable = false, unique = true, length = 50)
-	private String username;
+	// [설계] email이 로그인 식별자 — OAuth 연동 시 provider email과 매핑
+	@Column(nullable = false, unique = true, length = 100)
+	private String email;
 
 	@Column(nullable = false)
 	private String password;
 
-	@Column(unique = true, length = 100)
-	private String email;
+	// [설계] 이메일 prefix로 자동 생성, OAuth 연동 시 provider name으로 덮어쓰기 가능
+	@Column(unique = true, length = 50)
+	private String username;
 
 	@CreatedDate
 	@Column(updatable = false)
@@ -40,9 +41,9 @@ public class User {
 	private LocalDateTime updatedAt;
 
 	@Builder
-	public User(String username, String password, String email) {
-		this.username = username;
-		this.password = password;
+	public User(String email, String password, String username) {
 		this.email = email;
+		this.password = password;
+		this.username = username;
 	}
 }

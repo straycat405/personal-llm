@@ -24,9 +24,10 @@ spring:
     ollama:
       base-url: http://localhost:11434   # Ollama 기본 포트
       chat:
-        model: qwen2.5:7b
+        model: qwen3:8b
         options:
-          temperature: 0.7              # 응답 창의성 (0=정확, 1=창의)
+          temperature: 0.3              # [설계] 낮을수록 언어 전환 억제
+          think: false      # qwen3 thinking 모드 비활성화 (스트리밍 시 <think> 태그 누출 방지)
       embedding:
         model: bge-m3                   # 한국어 임베딩 모델 (RAG용)
     chat:
@@ -55,5 +56,7 @@ server:
 
 # ── JWT ──────────────────────────────────────────────────
 jwt:
-  secret: btllm-jwt-secret-key-must-be-at-least-32-bytes!!
+  # [설계] 개발 환경: 재시작마다 랜덤 secret → 기존 토큰 자동 무효화
+  #         운영 환경: 환경변수 JWT_SECRET으로 고정값 주입 (ex. export JWT_SECRET=...)
+  secret: ${JWT_SECRET:${random.value}}
   access-token-expiry-ms: 3600000   # 1시간

@@ -36,27 +36,30 @@ public class UserService {
 
     @Transactional
     public void signup(SignupRequest request) {
-        if (userRepository.existsByUsername(request.username())) {
+        if (userRepository.existsByEmail(request.email())) {
             throw new BusinessException(ErrorCode.USER_ALREADY_EXISTS);
         }
+        // [설계] username = 이메일 prefix 자동 생성: OAuth 연동 시 provider name으로 덮어쓰기 가능
+        String username = request.email().split("@")[0];
         User user = User.builder()
-                .username(request.username())
-                .password(passwordEncoder.encode(request.password()))
                 .email(request.email())
+                .password(passwordEncoder.encode(request.password()))
+                .username(username)
                 .build();
         userRepository.save(user);
     }
 
     @Transactional(readOnly = true)
     public LoginResponse login(LoginRequest request) {
-        User user = userRepository.findByUsername(request.username())
+        // [설계] User Enumeration 방지: 이메일 미존재·비밀번호 불일치 동일 메시지
+        User user = userRepository.findByEmail(request.email())
             .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_CREDENTIALS));
 
         if (!passwordEncoder.matches(request.password(), user.getPassword())) {
             throw new BusinessException(ErrorCode.INVALID_CREDENTIALS);
         }
 
-        String accessToken = jwtProvider.createAccessToken(user.getId(), user.getUsername());
+        String accessToken = jwtProvider.createAccessToken(user.getId(), user.getEmail());
         return new LoginResponse(accessToken);
     }
 }

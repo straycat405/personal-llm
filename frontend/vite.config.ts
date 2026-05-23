@@ -23,6 +23,14 @@ export default defineConfig({
       '/ws': {
         target: 'ws://localhost:8080',
         ws: true,
+        // [설계] 페이지 이동·새로고침 시 브라우저가 WS 연결을 끊으면
+        //        proxy가 쓰기 시도 → ECONNABORTED 발생. 정상 종료 신호이므로 무시
+        configure: (proxy) => {
+          proxy.on('error', (err: NodeJS.ErrnoException) => {
+            if (err.code === 'ECONNABORTED' || err.code === 'ECONNRESET') return
+            console.error('[ws proxy error]', err)
+          })
+        },
       },
     },
   },

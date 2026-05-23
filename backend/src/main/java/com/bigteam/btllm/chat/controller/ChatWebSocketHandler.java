@@ -107,12 +107,14 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
                     if (response.getResult() == null) return;
                     var output = response.getResult().getOutput();
                     if (output == null) return;
-                    // 도구 호출 청크: toolCalls 존재 → 클라이언트 미전송 (XML 노출 방지)
+                    // 구조적 도구 호출 청크 (toolCalls 필드)
                     if (!output.getToolCalls().isEmpty()) return;
                     String text = output.getText();
-                    if (text != null && !text.isBlank()) {
-                        sendSafe(session, WsResponse.token(text));
-                    }
+                    if (text == null || text.isBlank()) return;
+                    // [설계] qwen2.5는 도구 호출을 텍스트로도 출력하는 경우 있음
+                    //        <tool_call>·-tools.call( 패턴 → 클라이언트 미전송
+                    if (isToolCallText(text)) return;
+                    sendSafe(session, WsResponse.token(text));
                 },
                 error -> {
                     log.error("LLM 스트리밍 오류 — session: {}, error: {}",
@@ -135,6 +137,16 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
     }
 
     // ── private helpers ──────────────────────────────────
+
+    // [설계] qwen2.5가 텍스트 형식으로 도구 호출을 출력하는 2가지 패턴 필터
+    //        <tool_call>...</tool_call> : XML 형식
+    //        -tools.call("name", {...})- : 대시 형식
+    private boolean isToolCallText(String text) {
+        return text.contains("<tool_call>")
+            || text.contains("</tool_call>")
+            || text.contains("-tools.call(")
+            || text.contains("tools.call(\"");
+    }
 
     private String extractToken(WebSocketSession session) {
         String query = session.getUri() != null ? session.getUri().getQuery() : null;
