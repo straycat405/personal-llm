@@ -52,3 +52,8 @@ spring:
 # ── 서버 포트 ─────────────────────────────────────────────
 server:
   port: 8080
+
+# ── JWT ──────────────────────────────────────────────────
+jwt:
+  secret: btllm-jwt-secret-key-must-be-at-least-32-bytes!!
+  access-token-expiry-ms: 3600000   # 1시간

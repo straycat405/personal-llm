@@ -1,29 +1,45 @@
 package com.bigteam.btllm.config;
 
+import com.bigteam.btllm.common.jwt.JwtAuthFilter;
+import com.bigteam.btllm.common.jwt.JwtProvider;
+import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 @Configuration
 @EnableWebSecurity
+@RequiredArgsConstructor
 public class SecurityConfig {
 
-	@Bean
-	public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-		http
-			// 개발 단계: CSRF 토큰 검증 비활성화 (운영 전 활성화 필요)
-			.csrf(AbstractHttpConfigurer::disable)
-			// 개발 단계: 모든 요청 인증 없이 허용 (운영 전 경로별 권한 설정 필요)
-			.authorizeHttpRequests(auth -> auth
-				.anyRequest().permitAll()
-			)
-			// WebSocket 연결에 HTTP Basic 인증 팝업 뜨지 않도록 비활성화
-			.httpBasic(AbstractHttpConfigurer::disable)
-			.formLogin(AbstractHttpConfigurer::disable);
+    private final JwtProvider jwtProvider;
 
-		return http.build();
-	}
+    @Bean
+    public PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
+    }
+
+    @Bean
+    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+        http
+                .csrf(AbstractHttpConfigurer::disable)
+                .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .authorizeHttpRequests(auth -> auth
+                        .requestMatchers("/api/v1/auth/**").permitAll()
+                        .requestMatchers("/ws/**").permitAll()
+                        .anyRequest().authenticated()
+                )
+                .httpBasic(AbstractHttpConfigurer::disable)
+                .formLogin(AbstractHttpConfigurer::disable)
+                .addFilterBefore(new JwtAuthFilter(jwtProvider), UsernamePasswordAuthenticationFilter.class);
+
+        return http.build();
+    }
 }
