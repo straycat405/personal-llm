@@ -2,10 +2,12 @@ package com.bigteam.btllm.rag.controller;
 
 import com.bigteam.btllm.common.response.ApiResponse;
 import com.bigteam.btllm.rag.dto.EtlJobResponse;
+import com.bigteam.btllm.rag.dto.EtlSourceResponse;
 import com.bigteam.btllm.rag.dto.EtlUrlRequest;
 import com.bigteam.btllm.rag.service.EtlPipelineService;
 import com.bigteam.btllm.rag.service.EtlProgressTracker;
 import com.bigteam.btllm.rag.service.EtlProgressTracker.ProgressInfo;
+import com.bigteam.btllm.rag.service.EtlSourceService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
@@ -15,11 +17,12 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
 /**
- * [역할] ETL 파이프라인 트리거 REST API + SSE 진행률 스트림
+ * [역할] ETL 파이프라인 트리거 REST API + SSE 진행률 스트림 + 지식베이스 관리
  *
  * [설계 결정사항]
  * - POST → 202 Accepted + { jobId }: 즉시 반환, ETL은 @Async 스레드에서 처리
@@ -30,6 +33,7 @@ import java.util.UUID;
  *   UUID jobId가 충분한 난수성으로 대체 (추측 불가)
  * - SseEmitter 타임아웃 10분: 대용량 문서 처리 여유 시간 확보
  * - 폴링 간격 500ms: 진행률 체감 부드러움 vs 서버 부하 균형
+ * - GET /sources, DELETE /sources: JdbcTemplate 직접 SQL (VectorStore 집계 미지원)
  */
 @RestController
 @RequestMapping("/api/v1/admin/etl")
@@ -38,6 +42,7 @@ public class EtlController {
 
     private final EtlPipelineService etlPipelineService;
     private final EtlProgressTracker tracker;
+    private final EtlSourceService etlSourceService;
 
     // ── POST: 인덱싱 시작 → 202 + jobId ────────────────────────
 
@@ -121,5 +126,21 @@ public class EtlController {
         }).start();
 
         return emitter;
+    }
+
+    // ── GET: 인덱싱된 소스 목록 ──────────────────────────────
+
+    @GetMapping("/sources")
+    public ResponseEntity<ApiResponse<List<EtlSourceResponse>>> listSources() {
+        return ResponseEntity.ok(ApiResponse.ok(etlSourceService.listSources()));
+    }
+
+    // ── DELETE: source 기준 청크 전체 삭제 ───────────────────
+    // [설계] source는 URL 슬래시 포함 가능 → @PathVariable 대신 @RequestParam 사용
+    @DeleteMapping("/sources")
+    public ResponseEntity<ApiResponse<Map<String, Integer>>> deleteSource(
+            @RequestParam String source) {
+        int deleted = etlSourceService.deleteSource(source);
+        return ResponseEntity.ok(ApiResponse.ok(Map.of("deleted", deleted)));
     }
 }

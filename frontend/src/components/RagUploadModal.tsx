@@ -1,17 +1,61 @@
-import { useRef, useState } from 'react'
-import { ingestPdf, ingestUrl, subscribeProgress } from '@/api/etl'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import type { EtlSourceResponse } from '@/api/etl'
+import {
+  deleteSource,
+  ingestFile,
+  ingestUrl,
+  listSources,
+  subscribeProgress,
+} from '@/api/etl'
 
-// [역할] RAG 문서 인덱싱 모달 — URL 크롤링 / PDF 업로드 탭 + SSE 진행률 바
+// [역할] RAG 문서 인덱싱 + 지식베이스 관리 모달
+//   탭 3종: URL 크롤링 / PDF 업로드 / 지식베이스(목록·삭제)
 export default function RagUploadModal({ onClose }: { onClose: () => void }) {
-  const [tab, setTab] = useState<'url' | 'pdf'>('url')
+  const [tab, setTab] = useState<'url' | 'file' | 'kb'>('url')
   const [url, setUrl] = useState('')
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle')
   const [message, setMessage] = useState('')
   const [progress, setProgress] = useState(0)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  // [설계] EventSource ref: 모달 닫힘 또는 오류 시 SSE 연결 명시적 종료
+  // [설계] EventSource ref: 모달 닫힘 또는 탭 전환 시 SSE 연결 명시적 종료
   const esRef = useRef<EventSource | null>(null)
 
+  // ── 지식베이스 탭 상태 ───────────────────────────────────
+  const [sources, setSources] = useState<EtlSourceResponse[]>([])
+  const [sourcesLoading, setSourcesLoading] = useState(false)
+  // [설계] 삭제 중인 source 추적 → 버튼별 개별 로딩 (전역 status 사용 시 인덱싱 UI 충돌)
+  const [deletingSource, setDeletingSource] = useState<string | null>(null)
+
+  // ── 지식베이스 목록 로드 ──────────────────────────────────
+  const fetchSources = useCallback(async () => {
+    setSourcesLoading(true)
+    try {
+      const res = await listSources()
+      setSources(res.data.data)
+    } catch {
+      setSources([])
+    } finally {
+      setSourcesLoading(false)
+    }
+  }, [])
+
+  // [설계] kb 탭 진입 시 자동 로드 — 매번 최신 상태 반영
+  useEffect(() => {
+    if (tab === 'kb') void fetchSources()
+  }, [tab, fetchSources])
+
+  // ── 소스 삭제 ────────────────────────────────────────────
+  const handleDeleteSource = async (source: string) => {
+    setDeletingSource(source)
+    try {
+      await deleteSource(source)
+      await fetchSources()  // 삭제 후 목록 갱신
+    } finally {
+      setDeletingSource(null)
+    }
+  }
+
+  // ── 인덱싱 진행률 구독 (SSE) ─────────────────────────────
   const startProgress = (jobId: string) => {
     setStatus('loading')
     setProgress(0)
@@ -37,11 +81,11 @@ export default function RagUploadModal({ onClose }: { onClose: () => void }) {
     }
   }
 
-  const handlePdf = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
     try {
-      const res = await ingestPdf(file)
+      const res = await ingestFile(file)
       startProgress(res.data.data.jobId)
     } catch {
       setStatus('error')
@@ -52,12 +96,11 @@ export default function RagUploadModal({ onClose }: { onClose: () => void }) {
   }
 
   const handleClose = () => {
-    // 모달 닫힐 때 SSE 연결 정리
     esRef.current?.close()
     onClose()
   }
 
-  const handleTabChange = (t: 'url' | 'pdf') => {
+  const handleTabChange = (t: 'url' | 'file' | 'kb') => {
     esRef.current?.close()
     setTab(t)
     setStatus('idle')
@@ -71,6 +114,13 @@ export default function RagUploadModal({ onClose }: { onClose: () => void }) {
     success: 'text-green-400',
     error: 'text-red-400',
   }[status]
+
+  // 탭 레이블 매핑
+  const TAB_LABELS: Record<typeof tab, string> = {
+    url: 'URL 크롤링',
+    file: '파일 업로드',
+    kb: '지식베이스',
+  }
 
   return (
     <div
@@ -91,9 +141,9 @@ export default function RagUploadModal({ onClose }: { onClose: () => void }) {
           >✕</button>
         </div>
 
-        {/* 탭 */}
+        {/* 탭 — 3종 */}
         <div className="flex gap-1 mb-4 bg-gray-800 rounded-lg p-1">
-          {(['url', 'pdf'] as const).map((t) => (
+          {(['url', 'file', 'kb'] as const).map((t) => (
             <button
               key={t}
               onClick={() => handleTabChange(t)}
@@ -101,7 +151,7 @@ export default function RagUploadModal({ onClose }: { onClose: () => void }) {
                 tab === t ? 'bg-gray-700 text-white' : 'text-gray-500 hover:text-gray-300'
               }`}
             >
-              {t === 'url' ? 'URL 크롤링' : 'PDF 업로드'}
+              {TAB_LABELS[t]}
             </button>
           ))}
         </div>
@@ -130,8 +180,8 @@ export default function RagUploadModal({ onClose }: { onClose: () => void }) {
           </div>
         )}
 
-        {/* PDF 탭 */}
-        {tab === 'pdf' && (
+        {/* 파일 업로드 탭 — TikaDocumentReader로 멀티포맷 처리 */}
+        {tab === 'file' && (
           <div>
             <button
               onClick={() => fileInputRef.current?.click()}
@@ -140,17 +190,69 @@ export default function RagUploadModal({ onClose }: { onClose: () => void }) {
                          disabled:opacity-50 rounded-xl p-8 text-center transition cursor-pointer"
             >
               <p className="text-gray-400 text-sm">
-                {status === 'loading' ? '인덱싱 중...' : 'PDF 파일 클릭하여 선택'}
+                {status === 'loading' ? '인덱싱 중...' : '파일 클릭하여 선택'}
               </p>
-              <p className="text-gray-600 text-xs mt-1">.pdf 형식만 지원</p>
+              {/* [설계] Tika 지원 포맷 안내 — 사용자가 업로드 가능 형식 예측 가능하게 */}
+              <p className="text-gray-600 text-xs mt-1">PDF · DOCX · XLSX · PPTX · TXT 지원</p>
             </button>
             <input
               ref={fileInputRef}
               type="file"
-              accept=".pdf"
+              accept=".pdf,.docx,.xlsx,.pptx,.txt,.hwp"
               className="hidden"
-              onChange={handlePdf}
+              onChange={handleFile}
             />
+          </div>
+        )}
+
+        {/* 지식베이스 탭 */}
+        {tab === 'kb' && (
+          <div className="min-h-[120px]">
+            {sourcesLoading ? (
+              // 로딩 중
+              <p className="text-center text-gray-500 text-sm py-8">불러오는 중...</p>
+            ) : sources.length === 0 ? (
+              // 빈 상태
+              <p className="text-center text-gray-500 text-sm py-8">인덱싱된 문서 없음</p>
+            ) : (
+              // 소스 목록 — 최대 높이 256px, 스크롤 허용
+              <ul className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                {sources.map((s) => (
+                  <li
+                    key={s.source}
+                    className="flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-2"
+                  >
+                    <div className="flex-1 min-w-0">
+                      {/* [설계] truncate: URL·파일명이 모달 너비 초과 시 말줄임표 처리 */}
+                      <p className="text-white text-sm truncate" title={s.source}>
+                        {s.source}
+                      </p>
+                      <p className="text-gray-500 text-xs">
+                        {/* type 배지 + 청크 수 */}
+                        <span className="inline-block bg-gray-700 rounded px-1 mr-1">{s.type}</span>
+                        {s.chunkCount}청크
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => void handleDeleteSource(s.source)}
+                      disabled={deletingSource === s.source}
+                      className="shrink-0 text-red-400 hover:text-red-300 disabled:opacity-50
+                                 text-xs font-medium transition"
+                    >
+                      {deletingSource === s.source ? '삭제 중...' : '삭제'}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {/* 수동 새로고침 */}
+            <button
+              onClick={() => void fetchSources()}
+              disabled={sourcesLoading}
+              className="mt-3 text-xs text-gray-500 hover:text-gray-300 disabled:opacity-50 transition"
+            >
+              새로고침
+            </button>
           </div>
         )}
 
@@ -170,8 +272,8 @@ export default function RagUploadModal({ onClose }: { onClose: () => void }) {
           </div>
         )}
 
-        {/* 완료/오류 메시지 */}
-        {status !== 'loading' && message && (
+        {/* 완료/오류 메시지 — kb 탭 제외 */}
+        {status !== 'loading' && message && tab !== 'kb' && (
           <p className={`mt-3 text-sm ${statusColor}`}>{message}</p>
         )}
       </div>
