@@ -1,0 +1,32 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: btllm-backend
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: btllm
+          environment: dev
+          __path__: /logs/btllm.log
+
+    pipeline_stages:
+      # Spring Boot 로그 포맷 파싱: level, logger 추출 → Loki 레이블
+      - regex:
+          expression: '^(?P<timestamp>\S+)\s+(?P<level>\w+)\s+\d+\s+---\s+\[[^\]]+\]\s+\[(?P<thread>[^\]]+)\]\s+(?P<logger>\S+)\s+:\s+(?P<message>.*)$'
+      - labels:
+          level:
+          logger:
+      - timestamp:
+          source: timestamp
+          format: RFC3339Nano
+          fallback_formats:
+            - "2006-01-02T15:04:05.000Z07:00"

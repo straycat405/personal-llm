@@ -4,7 +4,13 @@
       "WebSearch",
       "Bash(docker compose *)",
       "mcp__plugin_context7_context7__resolve-library-id",
-      "mcp__plugin_context7_context7__query-docs"
+      "mcp__plugin_context7_context7__query-docs",
+      "Bash(Get-ChildItem \"C:\\\\Users\\\\User\\\\portfolio-20260519\\\\projects\\\\btllm\")",
+      "Bash(Select-Object Name,PSIsContainer)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\User\\\\portfolio-20260519\\\\projects\\\\btllm\\\\backend\\\\src\\\\main\\\\java\" -Filter \"*.java\" -Recurse)",
+      "Bash(Select-String -Pattern \"WebSocket|@MessageMapping|@SubscribeMapping\" -List)",
+      "Bash(Select-Object Path)",
+      "Bash(python -c \"import PyPDF2; r=PyPDF2.PdfReader\\(r'C:\\\\Users\\\\User\\\\portfolio-20260519\\\\박동진_portfolio_20260525.pdf'\\); [print\\(f'=== PAGE {i+1} ===\\\\n', r.pages[i].extract_text\\(\\)\\) for i in range\\(min\\(15,len\\(r.pages\\)\\)\\)]\")"
     ]
   }
 }

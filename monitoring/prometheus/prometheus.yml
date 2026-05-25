@@ -1,0 +1,13 @@
+global:
+  scrape_interval: 15s      # 15초마다 메트릭 수집
+  evaluation_interval: 15s  # 15초마다 규칙 평가
+
+scrape_configs:
+  # Spring Boot Actuator — IntelliJ 실행 기준 host.docker.internal:8080
+  - job_name: 'btllm-backend'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['host.docker.internal:8080']
+        labels:
+          application: 'btllm'
+          environment: 'dev'

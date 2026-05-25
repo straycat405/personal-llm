@@ -57,6 +57,9 @@ public class SecurityConfig {
                 // [설계] SSE 엔드포인트 permitAll: EventSource는 커스텀 헤더 미지원
                 //   UUID jobId가 난수성으로 보호 (추측 불가 — 36자리 UUID v4)
                 .requestMatchers("/api/v1/admin/etl/*/progress").permitAll()
+                // [설계] Prometheus 스크래핑 무인증: 내부 네트워크(Docker) 전용 접근
+                //   운영 환경에서는 별도 관리 포트 분리 권장
+                .requestMatchers("/actuator/prometheus", "/actuator/health").permitAll()
                 .anyRequest().authenticated()
             )
             .httpBasic(AbstractHttpConfigurer::disable)

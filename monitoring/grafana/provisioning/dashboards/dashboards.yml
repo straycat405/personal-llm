@@ -1,0 +1,10 @@
+apiVersion: 1
+
+providers:
+  - name: btllm-dashboards
+    type: file
+    disableDeletion: false   # Grafana UI에서 삭제 허용
+    updateIntervalSeconds: 10 # 파일 변경 시 10초 내 자동 반영
+    options:
+      path: /etc/grafana/provisioning/dashboards
+      foldersFromFilesStructure: false

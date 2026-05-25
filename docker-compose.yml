@@ -36,10 +36,74 @@ services:
       # [설계] host.docker.internal: 컨테이너 → 호스트 로컬 Ollama 접근
       SPRING_AI_OLLAMA_BASE_URL: http://host.docker.internal:11434
       JWT_SECRET: ${JWT_SECRET:-btllm-dev-secret-change-in-production}
+    volumes:
+      - ./backend/logs:/app/logs   # Promtail이 읽을 로그 경로 공유
     depends_on:
       db:
         condition: service_healthy
     restart: on-failure
 
+  # ── Prometheus (메트릭 수집) ──────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.52.0
+    container_name: btllm-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.enable-lifecycle'             # POST /-/reload 로 설정 핫리로드 가능
+      - '--web.enable-remote-write-receiver' # k6 → Prometheus remote write 수신 허용
+    # [설계] host.docker.internal: IntelliJ 실행 백엔드(host:8080) 스크래핑용
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # ── Grafana (대시보드 시각화) ─────────────────────────────────
+  grafana:
+    image: grafana/grafana:11.0.0
+    container_name: btllm-grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    depends_on:
+      - prometheus
+      - loki
+
+  # ── Loki (로그 집계) ──────────────────────────────────────────
+  loki:
+    image: grafana/loki:2.9.10
+    container_name: btllm-loki
+    user: "0"   # Windows Docker Desktop volume 권한 우회 — root로 실행
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./monitoring/loki/loki-config.yml:/etc/loki/local-config.yaml
+      - loki_data:/tmp/loki
+    command: -config.file=/etc/loki/local-config.yaml
+
+  # ── Promtail (로그 수집 에이전트) ─────────────────────────────
+  # [설계] backend/logs 마운트: Spring Boot 로그파일 → Loki 전송
+  promtail:
+    image: grafana/promtail:2.9.10
+    container_name: btllm-promtail
+    volumes:
+      - ./monitoring/promtail/promtail-config.yml:/etc/promtail/config.yml
+      - ./backend/logs:/logs    # IntelliJ 실행 시 생성되는 로그 파일
+    command: -config.file=/etc/promtail/config.yml
+    depends_on:
+      - loki
+
 volumes:
   postgres_data:
+  prometheus_data:
+  grafana_data:
+  loki_data:

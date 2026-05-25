@@ -8,11 +8,16 @@ spring:
     username: btllm
     password: btllm1234
     driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 30       # [성능] 기본값 10 → 30 (800 VU 부하 시 pending 180 → 0 목표)
+      minimum-idle: 10            # 유휴 상태 최소 유지 커넥션
+      connection-timeout: 3000    # 커넥션 획득 대기 최대 3초 (기본 30초 → 빠른 실패)
 
   # ── JPA ──────────────────────────────────────────────────
   jpa:
     hibernate:
       ddl-auto: create   # 개발 중 자동 테이블 생성 (운영 시 validate로 변경)
+    open-in-view: false  # [성능] 커넥션 점유를 트랜잭션 종료 시점에 반환 (기본값 true → HTTP 응답까지 점유)
     show-sql: true
     properties:
       hibernate:
@@ -82,6 +87,26 @@ spring:
 # ── 서버 포트 ─────────────────────────────────────────────
 server:
   port: 8080
+  tomcat:
+    threads:
+      max: 400        # [성능] 기본값 200 → 400 (400 VU 부하 시 스레드 포화 해소)
+      min-spare: 20   # 유휴 최소 스레드 (기본 10)
+
+# ── Actuator + Prometheus ─────────────────────────────────
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics  # /actuator/prometheus 노출
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    tags:
+      application: ${spring.application.name}    # Prometheus 레이블 자동 부착
+    distribution:
+      percentiles-histogram:
+        hikaricp.connections.acquire: true        # HikariCP acquire time histogram 활성화 → p99 쿼리 가능
 
 # ── JWT ──────────────────────────────────────────────────
 jwt:
