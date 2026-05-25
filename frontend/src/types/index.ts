@@ -29,3 +29,19 @@ export interface ChatHistoryResponse {
   content: string
   createdAt: string
 }
+
+// ── 모델 선택 관련 타입 ─────────────────────────────────────
+// 백엔드 /api/v1/models 응답 구조와 1:1 대응
+
+export interface ModelInfo {
+  id: string          // 모델 ID (예: "claude-sonnet-4-6", "qwen3:8b")
+  name: string        // 표시 이름 (예: "Claude Sonnet 4.6")
+  description: string // 짧은 설명 (예: "성능·속도 균형")
+}
+
+export interface ProviderInfo {
+  provider: string      // provider 키 (예: "ollama", "claude")
+  providerName: string  // 표시 이름 (예: "Claude (Anthropic)")
+  available: boolean    // API key 설정 여부 → false면 선택 불가
+  models: ModelInfo[]
+}

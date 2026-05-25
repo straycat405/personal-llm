@@ -12,6 +12,8 @@ export interface WsResponse {
 
 interface UseWebSocketOptions {
   conversationId: string | null
+  provider: string          // [신규] LLM provider (예: "ollama", "claude")
+  model: string             // [신규] 모델명 (예: "qwen3:8b", "claude-sonnet-4-6")
   onMessage: (res: WsResponse) => void
   onOpen?: () => void
   onClose?: () => void
@@ -21,18 +23,16 @@ interface UseWebSocketOptions {
  * [역할] WebSocket 연결 생명주기 관리 훅
  *
  * [설계 결정사항]
- * - conversationId 변경 시 재연결: 채팅방 전환 시 기존 연결 닫고 새 연결 자동 생성
+ * - provider·model을 URL 쿼리 파라미터로 전달: 연결 시점에 모델 고정
+ * - model 값 encodeURIComponent: "qwen3:8b"의 ':'가 URL 파라미터 파싱을 깨지 않도록
+ * - provider·model을 useEffect 의존성에 포함: 모델 변경 시 WS 자동 재연결
+ *   → cleanup(ws.close()) 후 새 provider·model 파라미터로 재연결
  * - 콜백을 ref로 래핑: onMessage 등이 매 렌더 재생성되어도 effect 재실행 방지
- *   (useEffect 의존성에 콜백 포함 시 연결 중 매 렌더마다 재연결되는 문제 방지)
- * - token을 localStorage에서 직접 읽음: 연결 시점에 항상 최신 토큰 사용
- * - window.location.host 사용: Vite dev proxy(/ws → ws://localhost:8080)와
- *   운영 환경 Nginx reverse proxy 모두 자동 대응
- *
- * [주의] sendMessage는 WebSocket.OPEN 상태일 때만 실제 전송됨
- * WS 연결 전 sendMessage 호출은 무시 → 호출측에서 pendingRef 패턴으로 처리
  */
 export function useWebSocket({
   conversationId,
+  provider,
+  model,
   onMessage,
   onOpen,
   onClose,
@@ -53,7 +53,13 @@ export function useWebSocket({
     const token = localStorage.getItem('accessToken')
     if (!token) return
 
-    const ws = new WebSocket(`ws://${window.location.host}/ws/chat?token=${token}`)
+    // [신규] provider·model 파라미터 추가 — model은 ':'가 포함될 수 있어 URL 인코딩
+    const ws = new WebSocket(
+      `ws://${window.location.host}/ws/chat` +
+      `?token=${token}` +
+      `&provider=${provider}` +
+      `&model=${encodeURIComponent(model)}`
+    )
     wsRef.current = ws
 
     ws.onopen = () => onOpenRef.current?.()
@@ -71,9 +77,9 @@ export function useWebSocket({
       onMessageRef.current({ type: 'ERROR', message: 'WebSocket 연결이 끊어졌습니다.' })
     }
 
-    // cleanup: 방 전환 또는 언마운트 시 연결 닫기
+    // cleanup: 방 전환, 모델 변경, 언마운트 시 연결 닫기
     return () => ws.close()
-  }, [conversationId])
+  }, [conversationId, provider, model]) // [신규] provider·model 변경 시 재연결
 
   const sendMessage = useCallback(
     (content: string) => {

@@ -30,6 +30,29 @@ spring:
           think: false      # qwen3 thinking 모드 비활성화 (스트리밍 시 <think> 태그 누출 방지)
       embedding:
         model: bge-m3                   # 한국어 임베딩 모델 (RAG용)
+
+  # ── Spring AI - Anthropic Claude ──────────────────────────────
+  # [설계] API key 주입 방법:
+  #   환경변수 SPRING_AI_ANTHROPIC_API_KEY=sk-ant-...  (Spring Boot 자동 바인딩)
+  # 미설정 시 AnthropicChatModel 자동 구성 안 됨 → /api/v1/models available=false 반환
+    anthropic:
+      chat:
+        options:
+          model: claude-sonnet-4-6        # ChatClientFactory에서 요청별 오버라이드 가능
+          temperature: 0.3                # 한국어 응답 일관성
+
+  # ── Spring AI - Google Gemini ────────────────────────────────
+  # [설계] API key 주입 방법:
+  #   환경변수 GOOGLE_AI_API_KEY=AIza...  (Spring Boot 자동 바인딩)
+  # 미설정 시 GoogleGenAiChatModel 자동 구성 안 됨 → /api/v1/models available=false 반환
+    google:
+      genai:
+        api-key: ${GOOGLE_AI_API_KEY:}       # 빈 문자열 = 미설정 → 자동 구성 비활성화
+        chat:
+          options:
+            model: gemini-2.5-flash           # ChatClientFactory에서 요청별 오버라이드 가능
+            temperature: 0.3                  # 낮은 온도 → 일관된 한국어 응답
+
     chat:
       memory:
         repository:

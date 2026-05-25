@@ -3,9 +3,10 @@ import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '@/stores/authStore'
 import { useChatStore } from '@/stores/chatStore'
 import { createChatRoom, deleteChatRoom, getChatRooms, getChatHistories } from '@/api/chatRoom'
+import { getModels } from '@/api/models'  // [신규] 모델 목록 조회
 import { useWebSocket } from '@/hooks/useWebSocket'
 import type { WsResponse } from '@/hooks/useWebSocket'
-import type { ChatRoomResponse } from '@/types'
+import type { ChatRoomResponse, ProviderInfo } from '@/types'
 import TypingIndicator from '@/components/TypingIndicator'
 import SkeletonRoom from '@/components/SkeletonRoom'
 import RagUploadModal from '@/components/RagUploadModal'
@@ -22,12 +23,14 @@ interface Message {
 
 // ── ChatPage ─────────────────────────────────────────────────
 /**
- * [역할] 전체 채팅 페이지 레이아웃 + 채팅방 CRUD
+ * [역할] 전체 채팅 페이지 레이아웃 + 채팅방 CRUD + 모델 선택
  *
  * [설계 결정사항]
- * - initialMsg: WelcomeView 첫 메시지 전송 시 채팅방 자동 생성 후 ChatView에 전달
- *   ChatView 마운트 → WebSocket 연결 완료 → 자동 전송 흐름
- * - ChatView에 key={room.id}: 방 전환 시 완전 재마운트 → 메시지 상태·WS 초기화
+ * - selectedProvider·selectedModel: ChatPage 전역 상태 → ChatView prop으로 전달
+ *   → useWebSocket URL 파라미터화 → WS 연결 시 모델 고정
+ * - providers: 마운트 시 /api/v1/models 조회 → 사이드바 selector 렌더링
+ *   실패 시 selector 미표시 (auth flow 영향 없음)
+ * - 기본값: ollama + qwen3:8b → API key 없어도 정상 동작 (하위 호환)
  */
 export default function ChatPage() {
   const navigate = useNavigate()
@@ -39,26 +42,47 @@ export default function ChatPage() {
   const [roomsLoading, setRoomsLoading] = useState(true)  // 채팅방 목록 초기 로딩
   const [ragOpen, setRagOpen] = useState(false)            // 문서 인덱싱 모달 표시
 
+  // [신규] 모델 선택 상태 — 사이드바에서 전역 관리
+  const [providers, setProviders] = useState<ProviderInfo[]>([])     // /api/v1/models 결과
+  const [selectedProvider, setSelectedProvider] = useState('ollama') // 기본: Ollama
+  const [selectedModel, setSelectedModel] = useState('qwen3:8b')     // 기본: qwen3:8b
+
   useEffect(() => {
     if (!isAuthenticated()) {
       navigate('/login')
       return
     }
+
+    // 채팅방 목록 로딩 (auth 실패 시 로그아웃)
     getChatRooms()
       .then((res) => setRooms(res.data.data ?? []))
       .catch((err) => {
-        // 토큰 만료 또는 서버에 해당 사용자 없음(DB 리셋 등) → 강제 로그아웃
         const status = err?.response?.status
         if (status === 401 || status === 403 || status === 404) {
           logout()
           navigate('/login')
         }
       })
-      .finally(() => setRoomsLoading(false))  // 성공·실패 무관하게 로딩 해제
+      .finally(() => setRoomsLoading(false))
+
+    // 모델 목록 로딩 (실패해도 auth flow 영향 없음 → selector 미표시)
+    getModels()
+      .then((res) => setProviders(res.data.data ?? []))
+      .catch(() => {}) // 실패 시 selector 미표시 (빈 providers 상태 유지)
   }, [])  // eslint-disable-line react-hooks/exhaustive-deps
 
+  // [신규] 사이드바 모델 선택 핸들러
+  // value 형식: "provider|model" (예: "claude|claude-sonnet-4-6")
+  // '|' 구분자 사용 이유: Ollama 모델명에 ':'가 포함됨 (예: qwen3:8b)
+  const handleModelChange = (value: string) => {
+    const separatorIdx = value.indexOf('|')
+    if (separatorIdx === -1) return
+    setSelectedProvider(value.slice(0, separatorIdx))
+    setSelectedModel(value.slice(separatorIdx + 1))
+    // [설계] 모델 변경 시 useWebSocket 의존성(provider, model) 변경 → WS 자동 재연결
+  }
+
   // [설계] 첫 메시지 입력 → 채팅방 자동 생성: LLM 서비스(Claude, ChatGPT) UX 패턴
-  // 제목은 메시지 앞 30자 사용 → 별도 제목 입력 불필요
   const handleWelcomeSubmit = async (content: string) => {
     const title = content.slice(0, 30).trim() || '새 대화'
     const res = await createChatRoom(title)
@@ -162,6 +186,38 @@ export default function ChatPage() {
           )}
         </ul>
 
+        {/* [신규] 모델 선택 — provider별 optgroup으로 그룹핑 */}
+        {providers.length > 0 && (
+          <div className="px-3 py-2 border-t border-gray-800">
+            <p className="text-xs text-gray-500 mb-1.5">언어 모델</p>
+            <select
+              value={`${selectedProvider}|${selectedModel}`}
+              onChange={(e) => handleModelChange(e.target.value)}
+              className="w-full bg-gray-800 text-white text-xs rounded-lg px-2 py-1.5
+                         border border-gray-700 focus:border-violet-500 outline-none cursor-pointer"
+            >
+              {providers.map((prov) => (
+                // [설계] available=false provider는 optgroup label에 "(API key 없음)" 표시
+                //        option disabled → 선택 불가, 단 목록에는 표시 (어떤 provider 지원하는지 파악 가능)
+                <optgroup
+                  key={prov.provider}
+                  label={prov.available ? prov.providerName : `${prov.providerName} (API key 없음)`}
+                >
+                  {prov.models.map((m) => (
+                    <option
+                      key={m.id}
+                      value={`${prov.provider}|${m.id}`}
+                      disabled={!prov.available}  // API key 없으면 선택 불가
+                    >
+                      {m.name}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          </div>
+        )}
+
         <div className="p-3 border-t border-gray-800 flex flex-col gap-1">
           <button
             onClick={() => setRagOpen(true)}
@@ -187,6 +243,8 @@ export default function ChatPage() {
               key={selectedRoom.id}
               room={selectedRoom}
               initialMessage={initialMsg}
+              provider={selectedProvider}   // [신규] 선택된 provider 전달
+              model={selectedModel}         // [신규] 선택된 model 전달
             />
           )
           : <WelcomeView onSubmit={handleWelcomeSubmit} />
@@ -275,22 +333,22 @@ function WelcomeView({ onSubmit }: { onSubmit: (content: string) => Promise<void
  * [역할] LLM 스트리밍 채팅 UI (방 1개에 대응)
  *
  * [설계 결정사항]
+ * - provider·model: useWebSocket URL 파라미터로 전달 → WS 연결 시 모델 고정
+ * - provider·model 변경 시 useWebSocket의 useEffect 재실행 → WS 재연결 (새 모델 적용)
  * - initialMessage 처리 흐름:
  *   ① 마운트 시 사용자 메시지 즉시 UI 표시 (낙관적 업데이트)
  *   ② pendingRef에 저장 → WS 연결 완료(handleOpen) 시 자동 전송
- * - pendingRef: state 대신 ref 사용 → isConnected 변화와 렌더링 타이밍 충돌 방지
- * - sendMsgRef: handleOpen이 useWebSocket 호출 이전 정의되므로 sendMessage 직접 참조 불가
- *   ref를 경유하여 매 렌더 최신 sendMessage 참조
- * - TOKEN 응답: 마지막 assistant 메시지에 누적 (불변성 유지 위해 배열 교체 방식)
- *
- * [TODO Phase 3] 마운트 시 REST API로 대화 이력 로드
  */
 function ChatView({
   room,
   initialMessage,
+  provider,
+  model,
 }: {
   room: ChatRoomResponse
   initialMessage?: string | null
+  provider: string  // [신규] LLM provider (예: "ollama", "claude")
+  model: string     // [신규] 모델명 (예: "qwen3:8b", "claude-sonnet-4-6")
 }) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
@@ -302,15 +360,13 @@ function ChatView({
   const sendMsgRef = useRef<(content: string) => void>(() => {})
 
   // 마운트 시 처리: initialMessage(자동 생성 흐름) 또는 기존 이력 로드
-  // key={room.id}로 방 전환마다 재마운트 → 매번 올바른 이력 fetch
   useEffect(() => {
     if (initialMessage) {
       // 새로 생성된 방: 첫 메시지 낙관적 표시 후 WS 연결 시 자동 전송
       setMessages([{ id: crypto.randomUUID(), role: 'user', content: initialMessage }])
       pendingRef.current = initialMessage
     } else {
-      // 기존 방 선택: DB 저장 이력 로드 (USER→user, ASSISTANT→assistant 변환)
-      // DB id(number)를 string으로 변환해 Message.id로 사용 → 새 메시지 UUID와 충돌 없음
+      // 기존 방 선택: DB 저장 이력 로드
       getChatHistories(room.id)
         .then((res) => {
           const histories = res.data.data ?? []
@@ -331,7 +387,6 @@ function ChatView({
         const last = prev[prev.length - 1]
         if (last?.role === 'assistant' && !last.isError) {
           // 마지막 assistant 메시지에 토큰 누적 (배열 교체로 불변성 유지)
-          // isError 메시지는 제외: StrictMode 이중 실행 시 오류 bubble에 응답이 붙는 현상 방지
           return [...prev.slice(0, -1), { ...last, content: last.content + (res.content ?? '') }]
         }
         // 첫 TOKEN: assistant 메시지 신규 생성
@@ -352,9 +407,7 @@ function ChatView({
 
   const handleOpen = useCallback(() => {
     setIsConnected(true)
-    // [설계] 재연결 성공 시 오류 메시지 제거:
-    //   React StrictMode 이중 실행 → WS #1 즉시 close → onerror → 에러 bubble 생성
-    //   → WS #2 정상 연결 → onopen → 에러 bubble은 더 이상 유효하지 않으므로 제거
+    // [설계] 재연결 성공 시 오류 메시지 제거 (React StrictMode 이중 연결 오류 bubble 정리)
     setMessages(prev => prev.filter(m => !m.isError))
     // WS 연결 완료 시 대기 중 메시지 자동 전송 (initialMessage 자동 생성 흐름)
     if (pendingRef.current) {
@@ -370,6 +423,8 @@ function ChatView({
 
   const { sendMessage } = useWebSocket({
     conversationId: room.conversationId,
+    provider,   // [신규] 사이드바 선택값 → WS URL 파라미터로 전달
+    model,      // [신규]
     onMessage: handleWsMessage,
     onOpen: handleOpen,
     onClose: handleClose,
@@ -407,9 +462,13 @@ function ChatView({
   return (
     <div className="flex flex-col h-full">
 
-      {/* 헤더 */}
+      {/* 헤더 — 방 제목 + 현재 모델 배지 + 연결 상태 */}
       <div className="px-6 py-4 border-b border-gray-800 flex items-center gap-3 shrink-0">
         <span className="font-semibold text-gray-200 truncate">{room.title}</span>
+        {/* [신규] 현재 사용 중인 모델 배지 */}
+        <span className="text-xs text-gray-600 bg-gray-800 px-2 py-0.5 rounded-full shrink-0">
+          {provider === 'claude' ? '🤖' : '🦙'} {model}
+        </span>
         <span className={`ml-auto shrink-0 text-xs px-2 py-0.5 rounded-full ${
           isConnected ? 'bg-green-950 text-green-400' : 'bg-gray-800 text-gray-500'
         }`}>
