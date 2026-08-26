@@ -1,12 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import type { EtlSourceResponse } from '@/api/etl'
-import {
-  deleteSource,
-  ingestFile,
-  ingestUrl,
-  listSources,
-  subscribeProgress,
-} from '@/api/etl'
+import { useEffect, useRef, useState } from 'react'
+import { ingestFile, ingestUrl, subscribeProgress } from '@/api/etl'
+import { useKnowledgeStore } from '@/stores/knowledgeStore'
 
 // [역할] RAG 문서 인덱싱 + 지식베이스 관리 모달
 //   탭 3종: URL 크롤링 / PDF 업로드 / 지식베이스(목록·삭제)
@@ -20,40 +14,21 @@ export default function RagUploadModal({ onClose }: { onClose: () => void }) {
   // [설계] EventSource ref: 모달 닫힘 또는 탭 전환 시 SSE 연결 명시적 종료
   const esRef = useRef<EventSource | null>(null)
 
-  // ── 지식베이스 탭 상태 ───────────────────────────────────
-  const [sources, setSources] = useState<EtlSourceResponse[]>([])
-  const [sourcesLoading, setSourcesLoading] = useState(false)
-  // [설계] 삭제 중인 source 추적 → 버튼별 개별 로딩 (전역 status 사용 시 인덱싱 UI 충돌)
-  const [deletingSource, setDeletingSource] = useState<string | null>(null)
-
-  // ── 지식베이스 목록 로드 ──────────────────────────────────
-  const fetchSources = useCallback(async () => {
-    setSourcesLoading(true)
-    try {
-      const res = await listSources()
-      setSources(res.data.data)
-    } catch {
-      setSources([])
-    } finally {
-      setSourcesLoading(false)
-    }
-  }, [])
+  // ── 지식베이스 상태 ──────────────────────────────────────
+  // [설계] 로컬 state → 전역 스토어로 이동: 사이드바 KnowledgePanel과 목록을 공유해야
+  //        여기서 업로드·삭제한 결과가 사이드바에 즉시 반영된다
+  const {
+    sources,
+    loading: sourcesLoading,
+    deletingSource,
+    refresh: fetchSources,
+    remove: handleDeleteSource,
+  } = useKnowledgeStore()
 
   // [설계] kb 탭 진입 시 자동 로드 — 매번 최신 상태 반영
   useEffect(() => {
     if (tab === 'kb') void fetchSources()
   }, [tab, fetchSources])
-
-  // ── 소스 삭제 ────────────────────────────────────────────
-  const handleDeleteSource = async (source: string) => {
-    setDeletingSource(source)
-    try {
-      await deleteSource(source)
-      await fetchSources()  // 삭제 후 목록 갱신
-    } finally {
-      setDeletingSource(null)
-    }
-  }
 
   // ── 인덱싱 진행률 구독 (SSE) ─────────────────────────────
   const startProgress = (jobId: string) => {
@@ -64,7 +39,12 @@ export default function RagUploadModal({ onClose }: { onClose: () => void }) {
     esRef.current = subscribeProgress(
       jobId,
       (p, msg) => { setProgress(p); setMessage(msg) },
-      () => { setStatus('success'); setProgress(100) },
+      () => {
+        setStatus('success')
+        setProgress(100)
+        // [설계] 인덱싱 완료 시 목록 갱신 — 사이드바 KnowledgePanel의 문서 수가 즉시 반영된다
+        void fetchSources()
+      },
       (err) => { setStatus('error'); setMessage('오류: ' + err) },
     )
   }

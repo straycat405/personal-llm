@@ -66,6 +66,12 @@ export default function LoginPage() {
           계정이 없으신가요?{' '}
           <Link to="/signup" className="text-violet-400 hover:underline">회원가입</Link>
         </p>
+        {/* [설계] 로그인 전에도 프로젝트가 무엇인지 확인할 수 있도록 가이드 링크 노출 */}
+        <p className="text-gray-600 text-xs mt-6 text-center">
+          <Link to="/about" className="hover:text-gray-400 transition">
+            이 서비스는 무엇인가요? — 사용 가이드 보기
+          </Link>
+        </p>
       </div>
     </div>
   )

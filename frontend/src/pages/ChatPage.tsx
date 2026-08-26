@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useAuthStore } from '@/stores/authStore'
 import { useChatStore } from '@/stores/chatStore'
 import { createChatRoom, deleteChatRoom, getChatRooms, getChatHistories } from '@/api/chatRoom'
@@ -10,6 +10,7 @@ import type { ChatRoomResponse, ProviderInfo } from '@/types'
 import TypingIndicator from '@/components/TypingIndicator'
 import SkeletonRoom from '@/components/SkeletonRoom'
 import RagUploadModal from '@/components/RagUploadModal'
+import KnowledgePanel from '@/components/KnowledgePanel'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
@@ -243,17 +244,20 @@ export default function ChatPage() {
           </div>
         )}
 
+        {/* [신규] 지식베이스 상시 노출 — 지금 AI가 참조 가능한 문서를 채팅 중에도 확인·삭제 가능 */}
+        <KnowledgePanel onAddClick={() => setRagOpen(true)} />
+
         <div className="p-3 border-t border-gray-800 flex flex-col gap-1">
-          <button
-            onClick={() => setRagOpen(true)}
-            className="w-full text-left text-gray-400 hover:text-white text-sm
+          <Link
+            to="/about"
+            className="w-full text-left text-gray-500 hover:text-white text-sm
                        py-1.5 px-2 transition rounded-lg hover:bg-gray-800"
           >
-            문서 인덱싱
-          </button>
+            사용 가이드
+          </Link>
           <button
             onClick={handleLogout}
-            className="w-full text-gray-500 hover:text-white text-sm py-1.5
+            className="w-full text-left text-gray-500 hover:text-white text-sm py-1.5 px-2
                        transition rounded-lg hover:bg-gray-800"
           >로그아웃</button>
         </div>

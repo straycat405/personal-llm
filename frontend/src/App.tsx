@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import LoginPage from '@/pages/LoginPage'
 import SignupPage from '@/pages/SignupPage'
 import ChatPage from '@/pages/ChatPage'
+import AboutPage from '@/pages/AboutPage'
 import { useAuthStore } from '@/stores/authStore'
 
 // [설계] react-router-dom v6 선택: Next.js는 SSR 기능이 불필요한 채팅 SPA에 과도함
@@ -16,6 +17,8 @@ export default function App() {
         <Route path="/" element={<Navigate to={isAuthenticated() ? '/chat' : '/login'} replace />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/signup" element={<SignupPage />} />
+        {/* [설계] /about은 인증 불필요 — 계정 없이도 프로젝트 목적·사용법을 확인할 수 있어야 한다 */}
+        <Route path="/about" element={<AboutPage />} />
         <Route path="/chat" element={<ChatPage />} />
       </Routes>
     </BrowserRouter>
