@@ -6,6 +6,39 @@
 
 ---
 
+## ⏭️ 다음 세션은 여기서 시작 (2026-08-27 기준)
+
+**저장소 상태**: `main` = `origin/main` = `bc2a57d`. 커밋·푸시 완료, 작업 트리 깨끗.
+백엔드 테스트 52건 통과. 프론트 lint·build 통과.
+
+**현재 성능 기준선** (청크 800, 63청크+요약 1, thinking ON):
+
+| 지표 | 값 |
+|---|---:|
+| 문항 통과율 | 50.0% (4/8) |
+| 필수 사실 포함률 | 76.2~77.8% |
+| 평균 / p95 지연 | 88.9s / 188.6s |
+
+**바로 결정해야 할 것 — 사용자와 상의 중이던 갈림길**
+
+`track-1`·`registration-1`·`prize-1` 실패의 근본 원인이 **PDF 표 평탄화**로 확정됐다
+(아래 3-1절 참고). 세 가지 선택지를 제시했고 **사용자 답변을 기다리는 상태**다.
+
+| 선택지 | 내용 | 비용 |
+|---|---|---|
+| (a) | 표 구조 보존 파싱 — 좌표 기반 추출 or 표 인식 리더 | 근본 해결, 작업 규모 큼 |
+| (b) | 알려진 제약으로 문서화 — 표 많은 문서는 정확도 한계 명시 | 즉시 |
+| (c) | 평가셋에서 표 기반 문항을 별도 범주로 분리 | 중간, 측정 기반 마련 |
+
+**직전 세션의 추천은 (c) → (a) 순서**였다. 현재 8문항 중 3개가 표 문항이라 전체 통과율이
+파싱 한계에 묶여 있고, 범주를 나누면 "파싱 제약 문항"과 "그 외"를 따로 볼 수 있어
+(a)에 투자할 가치가 있는지 판단이 서기 때문이다.
+
+**시작할 때 할 일**: 사용자에게 위 선택지를 다시 확인하고 진행. 이미 논의된 내용이므로
+처음부터 설명하지 말고 "(a)(b)(c) 중 어디로 갈지"만 물으면 된다.
+
+---
+
 ## 최신 인수인계 — 2026-08-27 Claude 세션 (이 절이 현재 기준)
 
 ### 0. 사용자가 지시한 작업 방식 (반드시 유지)
@@ -38,7 +71,18 @@
 | 3 | 사용자 결정: 출처 가드레일은 **백로그**, 리랭킹으로 진행 | — |
 | 4 | 하이브리드 재정렬(벡터+키워드) 도입 | 통과율 12.5%→25.0%. **랭킹 실패와 Recall 실패를 분리** |
 | 5 | OpenAI provider 연동 + `.env` 키 주입 | 트러블슈팅 3건(임베딩 빈 충돌, TTS 오토컨피그, `.env` 바인딩) |
-| 6 | 동일 골든셋 provider 비교 실험 | **실패 원인을 검색 문제와 모델 체급 문제로 분리** |
+| 6 | 동일 골든셋 provider 비교 실험 | 실패를 검색/모델 문제로 분리 — **나중에 이 분류가 틀린 것으로 밝혀짐** |
+| 7 | 포트폴리오 본문 작성 시작(`docs/portfolio.md`) | 4단 구조. 이후 작업마다 함께 갱신 중 |
+| 8 | 요약 청크 색인(`DocumentSummarizer`) | **가설 실패.** 검색은 되나 본문 개요 청크와 중복. 대신 **컨텍스트 초과 발견** |
+| 9 | 청크 크기 1500→800 | **최대 폭 개선.** 통과율 0%→50%, 사실 38.1%→76.2%, 지연 65.8s→50.6s |
+| 10 | provider 재비교(청크 800에서) | 단발로 "동률" 나왔으나 **3회 반복으로 자가 반증** — 사실 포함률만 동등(77.8%) |
+| 11 | 지연 진단 | 2번 틀린 뒤 원인 확정: **yaml `think:false`가 요청에 안 실림.** ON/OFF는 정면 트레이드오프 |
+| 12 | 의도 기반 thinking 라우팅(`ThinkingRouter`) | 메커니즘 작동(단순 조회 23.7s)하나 **골든셋 7/8이 복합 질의라 효과 미측정** |
+| 13 | 고착 실패 3문항 원인 규명 | **PDF 표 평탄화로 트랙-값 연결 소실** — 검색·생성이 아닌 **파싱 문제** |
+
+**이 세션의 성격**: 개선 그 자체보다 **잘못된 진단을 스스로 반증한 기록**이 많다.
+8·10·11·12단계가 모두 "가설이 틀렸음을 측정으로 확인한" 사례이며, 포트폴리오에서는 이것이
+오히려 강한 소재로 쓰인다. 다음 세션도 **원하는 결론일수록 반복 측정으로 걸러야 한다.**
 
 ### 2. 가장 중요한 산출물 — 로컬이 상용과 동률, 남은 실패는 모델 무관
 
@@ -177,32 +221,58 @@
   밖에서 실패해 앱이 죽는다. Gemini를 안 쓰면 `GOOGLE_AI_API_KEY=dummy`를 넣어야 한다.
   실험 gradle 태스크들은 이미 더미를 주입하고 있다.
 - **`providerComparisonExperiment`는 실제 과금**이 발생한다. 일반 `test`에서는 태그로 제외돼 있다.
+- **`defaultOptions`가 yaml을 덮어쓴다**: `ChatClientFactory`에서 `defaultOptions`를 통째로
+  지정하므로 `application.yaml`의 `ollama.chat.options.*`는 **요청에 실리지 않는다.**
+  `think`가 이 때문에 무시되고 있었다. 옵션을 추가할 때 반드시 팩토리 쪽에도 넣을 것.
+- **실험은 `chat_histories`에 남지 않는다**: 임시 conversationId를 쓰므로 DB의 토큰 기록은
+  실험 결과가 아니다. 그 데이터로 실험을 진단하면 틀린다(실제로 한 번 틀렸다).
+- **색인 파라미터 변경 시 재색인 필수**: 청크 크기·요약 청크는 색인 시점 값이라
+  `reindexDocument` 없이는 반영되지 않는다.
+- **평가 코퍼스가 바뀌면 기존 기준선과 비교 금지**: 과거 21청크·31,096자 → 현재
+  63청크(+요약 1)·청크 800이다. 코퍼스가 다르면 반드시 기준선을 다시 재고 비교할 것.
 - 나머지 하드웨어 주의사항(VRAM, `keep-alive: -1s`)은 아래 기존 문서 절을 그대로 따른다.
 
 ### 5. 실행 명령
 
 ```powershell
 cd C:\Users\User\claude-project\personal-llm-remaster\backend
-.\gradlew.bat test                              # 일반 테스트 (실험 제외)
-.\gradlew.bat ragGenerationQualityExperiment    # PDF 답변 품질
+.\gradlew.bat test                              # 일반 테스트 52건 (실험 제외)
+.\gradlew.bat ragGenerationQualityExperiment    # PDF 답변 품질 (약 7~10분)
 .\gradlew.bat localConversationQualityExperiment
 .\gradlew.bat providerComparisonExperiment      # 로컬 vs 상용 (과금 주의)
 ```
 
-대상 변경 예시:
+진단 도구 (LLM 호출 없이 검색 단계만 관측 — 수십 초):
+
+```powershell
+.\gradlew.bat trackAttributionDiagnostic   # 실패 3문항의 근거 존재 여부 + topK별 비교
+.\gradlew.bat summaryRetrievalDiagnostic   # 요약 청크가 개요형 질의에 잡히는지
+```
+
+색인 로직을 바꾼 뒤에는 **반드시 재색인**해야 평가가 유효하다.
+
+```powershell
+$env:REINDEX_PDF_PATH = "C:\Users\User\Desktop\DJP-2026\창업\(제2026-511호)「모두의_창업_프로젝트」_통합_모집_공고_(2차).pdf"
+.\gradlew.bat reindexDocument
+```
+
+실험 파라미터 주입 예시:
 
 ```powershell
 $env:PROVIDER_COMPARISON_TARGETS = "ollama=qwen3:8b,openai=gpt-4o"
-.\gradlew.bat providerComparisonExperiment
+$env:PROVIDER_COMPARISON_REPETITIONS = "3"
+$env:BTLLM_RAG_CHUNK_SIZE = "800"    # 변경 시 재색인 필요
+$env:BTLLM_THINKING = "false"        # 지연 우선(품질 하락 감수)
 ```
 
 ### 6. 보고서 위치
 
 | 파일 | 내용 |
 |---|---|
+| **`docs/portfolio.md`** | **채용 담당자가 읽는 포트폴리오 본문.** 4단 구조. 작업마다 함께 갱신할 것 |
 | `docs/portfolio-improvement-log.md` | **의사결정 기록의 본체.** 매 작업마다 누적 |
-| `docs/provider-comparison-experiment.md` | 로컬 vs 상용 비교 (신규) |
-| `docs/rag-generation-quality-experiment.md` | PDF 답변 품질 |
+| `docs/provider-comparison-experiment.md` | 로컬 vs 상용 비교 (3회 반복 지원) |
+| `docs/rag-generation-quality-experiment.md` | PDF 답변 품질 (문항별 thinking 라우팅 판정 포함) |
 | `docs/local-conversation-quality-experiment.md` | 대화 품질 |
 | `docs/rag-accuracy-experiment.md` | 청크 크기별 Recall |
 | `docs/performance-ux-improvement-plan.md` | 성능·UX 이슈 9건 진단 |

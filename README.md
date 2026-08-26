@@ -3,6 +3,15 @@
 > Java 8 + eGovFramework 기반 LLM을  
 > Java 17 + Spring Boot 3.x + Spring AI로 리팩토링
 
+**8GB VRAM 개인 PC에서 문서가 외부로 나가지 않는 로컬 RAG 문서 비서.**
+골든셋 기반 자동 평가 하네스로 개선을 측정한다.
+
+| 문서 | 내용 |
+|---|---|
+| [docs/portfolio.md](docs/portfolio.md) | **포트폴리오 본문** — 성과 지표, 기술 의사결정, 트러블슈팅 |
+| [docs/portfolio-improvement-log.md](docs/portfolio-improvement-log.md) | 개선 과정 전체 기록 (가설·실패·검증) |
+| [HANDOFF.md](HANDOFF.md) | 작업 인수인계 — 현재 상태와 다음 과제 |
+
 ---
 
 ## 기술 스택
@@ -78,7 +87,11 @@ TXT     → TikaDocumentReader
           │
           ▼  @Async (즉시 202 반환)
     TokenTextSplitter
-    (1500토큰, 문장 단위 분할)
+    (800토큰, 문장 단위 분할)
+          │
+          ▼
+   DocumentSummarizer
+   (문서 개요 요약 청크 1개 추가)
           │
           ▼
       pgVector 저장
@@ -91,7 +104,9 @@ TXT     → TikaDocumentReader
 - `POST /etl/*` → 202 Accepted + `jobId` 즉시 반환 (동기 처리 시 HTTP 타임아웃 위험)
 - `EtlProgressTracker`: `ConcurrentHashMap`으로 jobId별 진행 상태 관리
 - SSE 엔드포인트 `permitAll`: EventSource는 커스텀 헤더 미지원 → UUID jobId로 접근 제어 대체
-- `TokenTextSplitter` 청크 크기 1500토큰: 기본값 800 대비 임베딩 호출 ~50% 감소
+- `TokenTextSplitter` 청크 크기 **800토큰**: 한때 1500을 썼으나 한국어 공고문에서 평균 5,425자
+  청크가 만들어져 `topK=3` 근거만 약 4,521토큰이 되고 `num_ctx` 4096을 초과했다. 800으로 낮춰
+  골든셋 통과율이 0% → 50%로 올랐다 ([docs/portfolio.md](docs/portfolio.md) 8장)
 
 ### 4. 지식베이스 관리 인터페이스
 
@@ -200,6 +215,29 @@ cd backend
 ./gradlew localConversationQualityExperiment # 대화 품질(정체성·기억·출력 계약)
 ./gradlew providerComparisonExperiment       # 동일 골든셋 로컬 vs 상용 모델 비교
 ```
+
+LLM을 호출하지 않고 **검색 단계만** 관측하는 진단 도구도 있다. 최종 답변만 보면
+"근거가 없어서 틀린 것"과 "근거를 받고도 못 쓴 것"을 구분할 수 없기 때문이다.
+
+```bash
+./gradlew trackAttributionDiagnostic   # 특정 문항의 근거 존재 여부 + topK별 비교
+./gradlew summaryRetrievalDiagnostic   # 요약 청크가 개요형 질의에 검색되는지
+```
+
+색인 로직(청크 크기·요약 청크)을 바꾼 뒤에는 재색인해야 평가가 유효하다.
+
+```bash
+REINDEX_PDF_PATH='/path/to/문서.pdf' ./gradlew reindexDocument
+```
+
+주요 실험 파라미터:
+
+| 환경변수 | 기본값 | 설명 |
+|---|---|---|
+| `BTLLM_RAG_CHUNK_SIZE` | 800 | 색인 청크 크기(토큰). 변경 시 재색인 필요 |
+| `BTLLM_THINKING` | true | qwen3 thinking. 끄면 약 2.7배 빠르나 정확도 하락 |
+| `BTLLM_NUM_PREDICT` | 2048 | 출력 상한(폭주 방지용, 최적화 수단 아님) |
+| `PROVIDER_COMPARISON_REPETITIONS` | 1 | provider 비교 반복 횟수 |
 
 `providerComparisonExperiment`는 **상용 API 실제 과금이 발생한다.** 대상은 환경변수로 바꾼다.
 
