@@ -66,8 +66,33 @@ tasks.named('test') {
 
 // 로컬 실행 전용: 실 Ollama + pgVector 필요 (docker compose up -d db, ollama serve)
 tasks.register('ragAccuracyExperiment', Test) {
+	environment 'SPRING_AI_ANTHROPIC_API_KEY', 'dummy'
+	environment 'GOOGLE_AI_API_KEY', 'dummy'
 	useJUnitPlatform {
 		includeTags 'experiment'
+	}
+	filter {
+		includeTestsMatching 'com.bigteam.btllm.rag.experiment.RagAccuracyExperiment'
+	}
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+	outputs.upToDateWhen { false }
+}
+
+// 로컬 실행 전용: 실제 Tool Calling을 포함한 PDF 답변 품질 평가
+tasks.register('ragGenerationQualityExperiment', Test) {
+	// 전체 애플리케이션 컨텍스트는 멀티 provider 빈을 생성한다. 평가에서는 Ollama만 호출하므로
+	// 외부 통신 없는 더미 키로 빈 생성 조건만 충족해 로컬 재현성을 보장한다.
+	environment 'SPRING_AI_ANTHROPIC_API_KEY', 'dummy'
+	environment 'GOOGLE_AI_API_KEY', 'dummy'
+	useJUnitPlatform {
+		includeTags 'experiment'
+	}
+	filter {
+		includeTestsMatching 'com.bigteam.btllm.rag.experiment.RagGenerationQualityExperiment'
+	}
+	testLogging {
+		showStandardStreams = true
 	}
 	testClassesDirs = sourceSets.test.output.classesDirs
 	classpath = sourceSets.test.runtimeClasspath
