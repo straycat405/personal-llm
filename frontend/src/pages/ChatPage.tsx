@@ -19,6 +19,7 @@ interface Message {
   role: 'user' | 'assistant'
   content: string
   isError?: boolean       // true면 TOKEN append 대상에서 제외 (StrictMode 이중 연결 방어)
+  retryContent?: string   // [신규] 에러 발생 직전 사용자 메시지 — "다시 시도" 버튼에서 재사용
 }
 
 // ── ChatPage ─────────────────────────────────────────────────
@@ -355,9 +356,11 @@ function ChatView({
   const [isStreaming, setIsStreaming] = useState(false)
   const [isWaiting, setIsWaiting] = useState(false)  // 전송 후 첫 토큰 도착 전 대기
   const [isConnected, setIsConnected] = useState(false)
+  const [reconnectInfo, setReconnectInfo] = useState<{ attempt: number; max: number } | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const pendingRef = useRef<string | null>(null)
-  const sendMsgRef = useRef<(content: string) => void>(() => {})
+  const sendMsgRef = useRef<(content: string) => boolean>(() => false)
+  const lastSentContentRef = useRef<string | null>(null)  // [신규] 재전송 버튼용 — 직전에 보낸 사용자 메시지
 
   // 마운트 시 처리: initialMessage(자동 생성 흐름) 또는 기존 이력 로드
   useEffect(() => {
@@ -399,7 +402,13 @@ function ChatView({
       setIsWaiting(false)
       setMessages((prev) => [
         ...prev,
-        { id: crypto.randomUUID(), role: 'assistant', content: `⚠ ${res.message ?? '오류가 발생했습니다.'}`, isError: true },
+        {
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          content: `⚠ ${res.message ?? '오류가 발생했습니다.'}`,
+          isError: true,
+          retryContent: lastSentContentRef.current ?? undefined,  // [신규] 재전송 버튼용
+        },
       ])
       setIsStreaming(false)
     }
@@ -407,6 +416,7 @@ function ChatView({
 
   const handleOpen = useCallback(() => {
     setIsConnected(true)
+    setReconnectInfo(null)  // [신규] 재연결 성공 → 재연결 안내 해제
     // [설계] 재연결 성공 시 오류 메시지 제거 (React StrictMode 이중 연결 오류 bubble 정리)
     setMessages(prev => prev.filter(m => !m.isError))
     // WS 연결 완료 시 대기 중 메시지 자동 전송 (initialMessage 자동 생성 흐름)
@@ -415,11 +425,16 @@ function ChatView({
       pendingRef.current = null
       setIsStreaming(true)
       setIsWaiting(true)
+      lastSentContentRef.current = msg
       sendMsgRef.current(msg)
     }
   }, [])
 
   const handleClose = useCallback(() => setIsConnected(false), [])
+  // [신규] 지수 백오프 재연결 진행 상황 → 헤더 배지에 표시 (개선안 #5)
+  const handleReconnecting = useCallback((attempt: number, max: number) => {
+    setReconnectInfo({ attempt, max })
+  }, [])
 
   const { sendMessage } = useWebSocket({
     conversationId: room.conversationId,
@@ -428,6 +443,7 @@ function ChatView({
     onMessage: handleWsMessage,
     onOpen: handleOpen,
     onClose: handleClose,
+    onReconnecting: handleReconnecting,
   })
 
   // 매 렌더마다 ref 동기화: handleOpen에서 최신 sendMessage 참조 가능
@@ -439,12 +455,19 @@ function ChatView({
   }, [messages])
 
   const handleSend = (content: string) => {
-    if (!content.trim() || isStreaming || !isConnected) return
+    if (!content.trim() || isStreaming) return
     setMessages((prev) => [...prev, { id: crypto.randomUUID(), role: 'user', content }])
     setIsStreaming(true)
     setIsWaiting(true)  // 전송 → 대기 시작
-    sendMessage(content)
+    lastSentContentRef.current = content  // [신규] 재전송 버튼용
+    sendMessage(content)  // [설계] 연결 전이어도 훅 내부 큐에 담겼다가 open 시 자동 전송됨 (개선안 #7)
     setInput('')
+  }
+
+  // [신규] 에러 말풍선의 "다시 시도" — 직전 사용자 메시지를 그대로 재전송 (개선안 #6)
+  const handleRetry = (content: string) => {
+    setMessages((prev) => prev.filter((m) => !m.isError))
+    handleSend(content)
   }
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -470,9 +493,12 @@ function ChatView({
           {provider === 'claude' ? '🤖' : '🦙'} {model}
         </span>
         <span className={`ml-auto shrink-0 text-xs px-2 py-0.5 rounded-full ${
-          isConnected ? 'bg-green-950 text-green-400' : 'bg-gray-800 text-gray-500'
+          isConnected ? 'bg-green-950 text-green-400'
+            : reconnectInfo ? 'bg-amber-950 text-amber-400'
+            : 'bg-gray-800 text-gray-500'
         }`}>
-          {isConnected ? '연결됨' : '연결 중...'}
+          {/* [신규] 재연결 시도 중이면 시도 횟수 표시 (개선안 #5) */}
+          {isConnected ? '연결됨' : reconnectInfo ? `재연결 중... (${reconnectInfo.attempt}/${reconnectInfo.max})` : '연결 중...'}
         </span>
       </div>
 
@@ -513,6 +539,17 @@ function ChatView({
               {isStreaming && msg.role === 'assistant' && i === messages.length - 1 && (
                 <span className="inline-block w-0.5 h-4 bg-violet-400 ml-0.5 animate-pulse align-middle" />
               )}
+              {/* [신규] 에러 말풍선 — 직전 사용자 메시지 재전송 버튼 (개선안 #6) */}
+              {msg.isError && msg.retryContent && (
+                <button
+                  onClick={() => handleRetry(msg.retryContent!)}
+                  disabled={isStreaming}
+                  className="mt-2 block text-xs text-violet-400 hover:text-violet-300
+                             disabled:opacity-40 underline underline-offset-2 transition"
+                >
+                  다시 시도
+                </button>
+              )}
             </div>
           </div>
         ))}
@@ -539,9 +576,12 @@ function ChatView({
             rows={1}
             disabled={isStreaming}
           />
+          {/* [설계] !isConnected 조건 제거 — 재연결 중이어도 전송 허용, 훅 내부 큐에 담겼다가
+                     연결 복구 시 자동 전송됨 (개선안 #7). 완전히 끊긴 상태여도 사용자가
+                     타이핑을 막을 이유는 없다 */}
           <button
             type="submit"
-            disabled={!input.trim() || isStreaming || !isConnected}
+            disabled={!input.trim() || isStreaming}
             className="absolute right-3 bottom-3 bg-violet-700 hover:bg-violet-600
                        disabled:opacity-30 text-white rounded-xl px-3 py-1.5
                        text-sm transition font-medium"

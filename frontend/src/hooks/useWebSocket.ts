@@ -17,7 +17,11 @@ interface UseWebSocketOptions {
   onMessage: (res: WsResponse) => void
   onOpen?: () => void
   onClose?: () => void
+  onReconnecting?: (attempt: number, maxAttempts: number) => void  // [신규] 재연결 시도 중 UI 피드백용
 }
+
+const MAX_RECONNECT_ATTEMPTS = 5
+const RECONNECT_BASE_DELAY_MS = 1000  // 1s → 2s → 4s → 8s → 16s (지수 백오프)
 
 /**
  * [역할] WebSocket 연결 생명주기 관리 훅
@@ -28,6 +32,11 @@ interface UseWebSocketOptions {
  * - provider·model을 useEffect 의존성에 포함: 모델 변경 시 WS 자동 재연결
  *   → cleanup(ws.close()) 후 새 provider·model 파라미터로 재연결
  * - 콜백을 ref로 래핑: onMessage 등이 매 렌더 재생성되어도 effect 재실행 방지
+ * - [신규] 지수 백오프 자동 재연결: 서버 재배포·네트워크 순단으로 연결이 끊겨도
+ *   사용자가 새로고침하지 않아도 되도록 함 (개선안 #5). 의도적 종료(언마운트·방 전환·
+ *   모델 변경)는 intentionalCloseRef로 구분해 재연결 시도하지 않는다.
+ * - [신규] 연결 전 전송 큐잉: sendMessage 호출 시점에 소켓이 아직 OPEN이 아니면
+ *   메시지를 큐에 담아뒀다가 연결 완료 즉시 전송 — 유실 방지 (개선안 #7)
  */
 export function useWebSocket({
   conversationId,
@@ -36,56 +45,97 @@ export function useWebSocket({
   onMessage,
   onOpen,
   onClose,
+  onReconnecting,
 }: UseWebSocketOptions) {
   const wsRef = useRef<WebSocket | null>(null)
+  const intentionalCloseRef = useRef(false)
+  const reconnectAttemptRef = useRef(0)
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const outboundQueueRef = useRef<string[]>([])
 
   // [설계] ref로 콜백 래핑: effect 의존성에 함수 포함 시 매 렌더 재연결 방지
   const onMessageRef = useRef(onMessage)
   const onOpenRef = useRef(onOpen)
   const onCloseRef = useRef(onClose)
+  const onReconnectingRef = useRef(onReconnecting)
   onMessageRef.current = onMessage
   onOpenRef.current = onOpen
   onCloseRef.current = onClose
+  onReconnectingRef.current = onReconnecting
 
   useEffect(() => {
     if (!conversationId) return
 
-    const token = localStorage.getItem('accessToken')
-    if (!token) return
+    intentionalCloseRef.current = false
+    reconnectAttemptRef.current = 0
 
-    // [신규] provider·model 파라미터 추가 — model은 ':'가 포함될 수 있어 URL 인코딩
-    const ws = new WebSocket(
-      `ws://${window.location.host}/ws/chat` +
-      `?token=${token}` +
-      `&provider=${provider}` +
-      `&model=${encodeURIComponent(model)}`
-    )
-    wsRef.current = ws
+    const connect = () => {
+      const token = localStorage.getItem('accessToken')
+      if (!token) return
 
-    ws.onopen = () => onOpenRef.current?.()
-    ws.onmessage = (e) => {
-      try {
-        onMessageRef.current(JSON.parse(e.data) as WsResponse)
-      } catch {
-        // 비정상 메시지 무시
+      const ws = new WebSocket(
+        `ws://${window.location.host}/ws/chat` +
+        `?token=${token}` +
+        `&provider=${provider}` +
+        `&model=${encodeURIComponent(model)}`
+      )
+      wsRef.current = ws
+
+      ws.onopen = () => {
+        reconnectAttemptRef.current = 0
+        // 연결 대기 중 쌓인 메시지 순서대로 flush
+        const queued = outboundQueueRef.current
+        outboundQueueRef.current = []
+        queued.forEach((content) => ws.send(content))
+        onOpenRef.current?.()
+      }
+      ws.onmessage = (e) => {
+        try {
+          onMessageRef.current(JSON.parse(e.data) as WsResponse)
+        } catch {
+          // 비정상 메시지 무시
+        }
+      }
+      ws.onclose = () => {
+        onCloseRef.current?.()
+        if (intentionalCloseRef.current) return  // 의도적 종료(언마운트·방 전환 등) — 재연결 안 함
+
+        if (reconnectAttemptRef.current >= MAX_RECONNECT_ATTEMPTS) return
+
+        reconnectAttemptRef.current += 1
+        const attempt = reconnectAttemptRef.current
+        const delay = RECONNECT_BASE_DELAY_MS * 2 ** (attempt - 1)  // 1s,2s,4s,8s,16s
+        onReconnectingRef.current?.(attempt, MAX_RECONNECT_ATTEMPTS)
+        reconnectTimerRef.current = setTimeout(connect, delay)
+      }
+      ws.onerror = () => {
+        console.error('WebSocket 연결 오류')
+        // onMessage ERROR 타입으로 전달 → ChatView에서 사용자에게 표시
+        onMessageRef.current({ type: 'ERROR', message: 'WebSocket 연결이 끊어졌습니다.' })
       }
     }
-    ws.onclose = () => onCloseRef.current?.()
-    ws.onerror = () => {
-      console.error('WebSocket 연결 오류')
-      // onMessage ERROR 타입으로 전달 → ChatView에서 사용자에게 표시
-      onMessageRef.current({ type: 'ERROR', message: 'WebSocket 연결이 끊어졌습니다.' })
-    }
 
-    // cleanup: 방 전환, 모델 변경, 언마운트 시 연결 닫기
-    return () => ws.close()
+    connect()
+
+    // cleanup: 방 전환, 모델 변경, 언마운트 시 연결 닫기 — 재연결 시도하지 않도록 플래그 선처리
+    return () => {
+      intentionalCloseRef.current = true
+      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
+      wsRef.current?.close()
+    }
   }, [conversationId, provider, model]) // [신규] provider·model 변경 시 재연결
 
   const sendMessage = useCallback(
     (content: string) => {
-      if (wsRef.current?.readyState === WebSocket.OPEN && conversationId) {
-        wsRef.current.send(JSON.stringify({ conversationId, content }))
+      if (!conversationId) return false
+      const payload = JSON.stringify({ conversationId, content })
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(payload)
+        return true
       }
+      // 아직 연결 전(또는 재연결 중) — 큐에 담아뒀다가 open 시 자동 전송
+      outboundQueueRef.current.push(payload)
+      return false
     },
     [conversationId],
   )

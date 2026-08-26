@@ -1,6 +1,5 @@
 package com.bigteam.btllm.config;
 
-import com.bigteam.btllm.chat.advisor.SafeQuestionAnswerAdvisor;
 import com.bigteam.btllm.chat.advisor.TokenTrackingAdvisor;
 import org.springframework.ai.anthropic.AnthropicChatModel;
 import org.springframework.ai.anthropic.AnthropicChatOptions;
@@ -14,8 +13,6 @@ import org.springframework.ai.google.genai.GoogleGenAiChatModel;
 import org.springframework.ai.google.genai.GoogleGenAiChatOptions;
 import org.springframework.ai.ollama.OllamaChatModel;
 import org.springframework.ai.ollama.api.OllamaChatOptions;
-import org.springframework.ai.vectorstore.SearchRequest;
-import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.core.Ordered;
 import lombok.extern.slf4j.Slf4j;
@@ -32,8 +29,10 @@ import java.util.concurrent.ConcurrentHashMap;
  * - provider:model 키로 ConcurrentHashMap 캐시: Advisor 체인 불필요한 재생성 방지
  * - ObjectProvider<AnthropicChatModel>: SPRING_AI_ANTHROPIC_API_KEY 미설정 시 bean 없음
  *   → getIfAvailable() = null → Claude 비활성화 (앱 기동 실패 없음)
- * - Advisor 체인 5단계: 모든 provider 공통 적용 (provider 추가 시 자동 보장)
+ * - Advisor 체인 4단계: 모든 provider 공통 적용 (provider 추가 시 자동 보장)
  * - defaultOptions()로 모델명·온도 bake-in: 캐시 키(provider:model)로 자동 라우팅
+ * - RAG(SafeQuestionAnswerAdvisor)는 상시 advisor에서 제외 — LlmTools.searchKnowledgeBase
+ *   Tool로 전환해 모델이 필요할 때만 호출하도록 변경 (성능·정확도 개선안 #4)
  */
 @Slf4j
 @Component
@@ -51,7 +50,6 @@ public class ChatClientFactory {
     private final AnthropicChatModel anthropicChatModel;     // SPRING_AI_ANTHROPIC_API_KEY 없으면 null
     private final GoogleGenAiChatModel geminiChatModel;      // GOOGLE_AI_API_KEY 없으면 null
     private final ChatMemory chatMemory;                     // JdbcChatMemory — 대화 이력 영속화
-    private final VectorStore vectorStore;                   // pgVector — RAG 문서 검색
     private final TokenTrackingAdvisor tokenTrackingAdvisor; // 커스텀 — 토큰 사용량 추적·저장
 
     // [설계] provider:model 조합별 ChatClient 캐시 — ConcurrentHashMap: 스레드 안전 보장
@@ -62,7 +60,6 @@ public class ChatClientFactory {
         ObjectProvider<AnthropicChatModel> anthropicChatModelProvider,   // bean 없어도 안전
         ObjectProvider<GoogleGenAiChatModel> geminiChatModelProvider,    // bean 없어도 안전
         ChatMemory chatMemory,
-        VectorStore vectorStore,
         TokenTrackingAdvisor tokenTrackingAdvisor
     ) {
         this.ollamaChatModel = ollamaChatModel;
@@ -91,7 +88,6 @@ public class ChatClientFactory {
         this.geminiChatModel = resolvedGemini;
 
         this.chatMemory = chatMemory;
-        this.vectorStore = vectorStore;
         this.tokenTrackingAdvisor = tokenTrackingAdvisor;
     }
 
@@ -133,21 +129,15 @@ public class ChatClientFactory {
                     .order(Ordered.HIGHEST_PRECEDENCE)
                     .build(),
 
-                // ② pgVector 검색 → 관련 청크 프롬프트 주입 (RAG)
-                //    topK=5: 최대 5개 청크, similarityThreshold=0.5: 저관련 청크 필터
-                new SafeQuestionAnswerAdvisor(
-                    vectorStore,
-                    SearchRequest.builder().topK(5).similarityThreshold(0.5).build(),
-                    Ordered.HIGHEST_PRECEDENCE + 1
-                ),
-
-                // ③ 대화 이력 주입 — conversationId는 요청 시 파라미터로 전달
+                // ② 대화 이력 주입 — conversationId는 요청 시 파라미터로 전달
+                //    [변경] RAG(SafeQuestionAnswerAdvisor)는 상시 advisor에서 제거 —
+                //    LlmTools.searchKnowledgeBase Tool로 전환 (성능·정확도 개선안 #4)
                 MessageChatMemoryAdvisor.builder(chatMemory).build(),
 
-                // ④ 토큰 사용량 추적·DB 저장 (커스텀 StreamAdvisor)
+                // ③ 토큰 사용량 추적·DB 저장 (커스텀 StreamAdvisor)
                 tokenTrackingAdvisor,
 
-                // ⑤ 요청·응답 디버그 로거 (운영 환경 시 제거 예정)
+                // ④ 요청·응답 디버그 로거 (운영 환경 시 제거 예정)
                 new SimpleLoggerAdvisor(Ordered.LOWEST_PRECEDENCE - 1)
             );
 

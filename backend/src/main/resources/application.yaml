@@ -33,6 +33,9 @@ spring:
         options:
           temperature: 0.3              # [설계] 낮을수록 언어 전환 억제
           think: false      # qwen3 thinking 모드 비활성화 (스트리밍 시 <think> 태그 누출 방지)
+          keep-alive: -1s   # [성능] 기본값 5m → 무제한. 유휴 후 모델 언로드→재적재 콜드스타트 제거
+          # [주의] Spring AI가 이 값을 문자열로 직렬화 → Ollama Go duration 파서가 단위 없는 "-1"을
+          #        400으로 거부한다 ("missing unit in duration"). 반드시 "-1s"처럼 단위를 붙일 것.
       embedding:
         model: bge-m3                   # 한국어 임베딩 모델 (RAG용)
 

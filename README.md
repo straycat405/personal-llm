@@ -34,21 +34,20 @@ WebSocket 메시지 수신
         ├─ ① SafeGuardAdvisor          (HIGHEST_PRECEDENCE)
         │       부적절 입력을 LLM 호출 전 차단
         │
-        ├─ ② SafeQuestionAnswerAdvisor  (HIGHEST_PRECEDENCE + 1)
-        │       pgVector 유사도 검색 → 프롬프트에 컨텍스트 주입 (RAG)
-        │
-        ├─ ③ MessageChatMemoryAdvisor   (0)
+        ├─ ② MessageChatMemoryAdvisor   (0)
         │       대화 맥락 자동 주입 (JdbcChatMemoryRepository)
         │
-        ├─ ④ TokenTrackingAdvisor       (LOWEST - 2)
+        ├─ ③ TokenTrackingAdvisor       (LOWEST - 2)
         │       실제 usage 메타데이터 기반 토큰 추적 + DB 저장
         │
-        └─ ⑤ SimpleLoggerAdvisor        (LOWEST - 1)
+        └─ ④ SimpleLoggerAdvisor        (LOWEST - 1)
                 개발용 디버그 로그
 ```
 
 WebSocketHandler는 스트리밍 전송에만 집중하고,  
-메모리 관리·RAG·토큰 추적은 각 Advisor가 독립적으로 처리
+메모리 관리·토큰 추적은 각 Advisor가 독립적으로 처리.
+RAG(문서 검색)는 상시 Advisor가 아니라 아래 Tool Calling으로 처리한다 —
+모든 메시지마다 무조건 벡터 검색하지 않고, 모델이 필요하다고 판단할 때만 호출한다.
 
 ### 2. LLM Tool Calling - Agentic 패턴
 
@@ -58,7 +57,12 @@ LLM이 대화 맥락에 따라 도구를 자율 선택:
 |---|---|
 | `crawlWebPage` | URL → Jsoup 크롤링, 3000자 요약 |
 | `searchChatHistory` | 키워드 기반 과거 대화 검색 |
+| `searchKnowledgeBase` | pgVector 유사도 검색 (RAG) — 문서 기반 질문일 때만 호출 |
 | `getTokenUsage` | 누적 토큰·비용 조회 |
+
+**설계 변경**: 초기에는 `SafeQuestionAnswerAdvisor`로 모든 메시지에 상시 RAG 검색을 걸었으나,
+잡담에도 불필요한 임베딩 호출이 발생하고 무관한 청크가 컨텍스트를 오염시키는 문제가 있어
+Tool로 전환했다 (자세한 배경은 [docs/performance-ux-improvement-plan.md](docs/performance-ux-improvement-plan.md) #4 참고).
 
 ### 3. RAG ETL 파이프라인 - 비동기 + 실시간 진행률
 
