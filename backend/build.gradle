@@ -140,6 +140,19 @@ tasks.register('reindexDocument', Test) {
 }
 
 // 로컬 실행 전용: 요약 청크가 개요형 질의에서 실제로 검색되는지 검색 단계만 진단
+tasks.register('trackAttributionDiagnostic', Test) {
+	environment 'SPRING_AI_ANTHROPIC_API_KEY', 'dummy'
+	environment 'GOOGLE_AI_API_KEY', 'dummy'
+	useJUnitPlatform { includeTags 'reindex' }
+	filter {
+		includeTestsMatching 'com.bigteam.btllm.rag.experiment.TrackAttributionDiagnostic'
+	}
+	testLogging { showStandardStreams = true }
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+	outputs.upToDateWhen { false }
+}
+
 tasks.register('summaryRetrievalDiagnostic', Test) {
 	environment 'SPRING_AI_ANTHROPIC_API_KEY', 'dummy'
 	environment 'GOOGLE_AI_API_KEY', 'dummy'
