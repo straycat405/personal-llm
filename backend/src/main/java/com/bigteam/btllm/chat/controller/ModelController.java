@@ -61,6 +61,18 @@ public class ModelController {
                     Map.of("id", "gemini-2.5-flash", "name", "Gemini 2.5 Flash", "description", "최신 고성능"),
                     Map.of("id", "gemini-2.5-flash-lite-preview-06-17", "name", "Gemini 2.5 Flash-Lite", "description", "경량·고속")
                 )
+            ),
+
+            // OpenAI provider — SPRING_AI_OPENAI_API_KEY 설정 시 available
+            // (로컬 qwen3:8b 대비 응답 품질·지연 비교 실험용)
+            Map.of(
+                "provider", "openai",
+                "providerName", "ChatGPT (OpenAI)",
+                "available", chatClientFactory.isAvailable("openai"),
+                "models", List.of(
+                    Map.of("id", "gpt-4o-mini", "name", "GPT-4o mini", "description", "경량·고속"),
+                    Map.of("id", "gpt-4o", "name", "GPT-4o", "description", "고성능")
+                )
             )
         );
 

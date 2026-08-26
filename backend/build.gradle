@@ -32,6 +32,7 @@ dependencies {
 	implementation 'org.springframework.ai:spring-ai-starter-model-ollama'
 	implementation 'org.springframework.ai:spring-ai-starter-model-anthropic'
 	implementation 'org.springframework.ai:spring-ai-starter-model-google-genai'
+	implementation 'org.springframework.ai:spring-ai-starter-model-openai'
 	implementation 'org.springframework.ai:spring-ai-starter-vector-store-pgvector'
 	implementation 'io.jsonwebtoken:jjwt-api:0.12.6'
 	implementation 'org.springframework.ai:spring-ai-jsoup-document-reader'
@@ -61,7 +62,8 @@ dependencyManagement {
 tasks.named('test') {
 	useJUnitPlatform {
 		// 실제 Ollama·pgVector를 호출하는 장시간 실험은 CI/일반 빌드에서 제외
-		excludeTags 'experiment', 'conversation-experiment'
+		// provider-comparison은 상용 API 과금까지 발생하므로 반드시 제외한다
+		excludeTags 'experiment', 'conversation-experiment', 'provider-comparison'
 	}
 }
 
@@ -109,6 +111,34 @@ tasks.register('localConversationQualityExperiment', Test) {
 	}
 	filter {
 		includeTestsMatching 'com.bigteam.btllm.chat.experiment.LocalConversationQualityExperiment'
+	}
+	testLogging {
+		showStandardStreams = true
+	}
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+	outputs.upToDateWhen { false }
+}
+
+// 로컬 실행 전용: 동일 RAG 골든셋을 로컬 모델과 상용 API에 각각 실행해 비교
+//
+// [주의] 상용 provider 키가 backend/.env에 설정돼 있으면 실제 과금이 발생한다.
+//   다른 실험 태스크와 달리 상용 키를 더미로 덮어쓰지 않는다 — 실제 호출이 실험의 목적이기 때문.
+//   키가 없는 provider는 실험 코드가 자동으로 건너뛰고 보고서에 사유를 남긴다.
+// 대상 변경: PROVIDER_COMPARISON_TARGETS='ollama=qwen3:8b,openai=gpt-4o'
+tasks.register('providerComparisonExperiment', Test) {
+	// [주의] 비교 대상이 아닌 provider는 더미 키로 빈 생성 조건만 충족시킨다.
+	//   Google starter의 CachedContentService처럼 우리 ChatClientFactory의 try-catch 밖에서
+	//   즉시 생성되는 빈이 있어, 키가 비어 있으면 컨텍스트 기동 자체가 실패하기 때문이다.
+	//   더미 키는 외부 통신을 하지 않으므로 실험 결과에 영향을 주지 않는다.
+	//   OpenAI 키만은 덮어쓰지 않는다 — 실제 호출이 이 실험의 목적이다.
+	environment 'SPRING_AI_ANTHROPIC_API_KEY', 'dummy'
+	environment 'GOOGLE_AI_API_KEY', 'dummy'
+	useJUnitPlatform {
+		includeTags 'provider-comparison'
+	}
+	filter {
+		includeTestsMatching 'com.bigteam.btllm.rag.experiment.ProviderComparisonExperiment'
 	}
 	testLogging {
 		showStandardStreams = true

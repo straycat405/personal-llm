@@ -13,6 +13,8 @@ import org.springframework.ai.google.genai.GoogleGenAiChatModel;
 import org.springframework.ai.google.genai.GoogleGenAiChatOptions;
 import org.springframework.ai.ollama.OllamaChatModel;
 import org.springframework.ai.ollama.api.OllamaChatOptions;
+import org.springframework.ai.openai.OpenAiChatModel;
+import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.core.Ordered;
 import lombok.extern.slf4j.Slf4j;
@@ -88,6 +90,7 @@ public class ChatClientFactory {
     private final OllamaChatModel ollamaChatModel;           // 로컬 Ollama — 항상 사용 가능
     private final AnthropicChatModel anthropicChatModel;     // SPRING_AI_ANTHROPIC_API_KEY 없으면 null
     private final GoogleGenAiChatModel geminiChatModel;      // GOOGLE_AI_API_KEY 없으면 null
+    private final OpenAiChatModel openAiChatModel;           // SPRING_AI_OPENAI_API_KEY 없으면 null
     private final ChatMemory chatMemory;                     // JdbcChatMemory — 대화 이력 영속화
     private final TokenTrackingAdvisor tokenTrackingAdvisor; // 커스텀 — 토큰 사용량 추적·저장
 
@@ -98,6 +101,7 @@ public class ChatClientFactory {
         OllamaChatModel ollamaChatModel,
         ObjectProvider<AnthropicChatModel> anthropicChatModelProvider,   // bean 없어도 안전
         ObjectProvider<GoogleGenAiChatModel> geminiChatModelProvider,    // bean 없어도 안전
+        ObjectProvider<OpenAiChatModel> openAiChatModelProvider,         // bean 없어도 안전
         ChatMemory chatMemory,
         TokenTrackingAdvisor tokenTrackingAdvisor
     ) {
@@ -126,6 +130,17 @@ public class ChatClientFactory {
         }
         this.geminiChatModel = resolvedGemini;
 
+        // [설계] SPRING_AI_OPENAI_API_KEY 미설정 시 OpenAiChatModel 빈 생성 실패
+        //        동일 패턴으로 try-catch 흡수 → OpenAI 비활성화 상태로 앱 정상 기동
+        OpenAiChatModel resolvedOpenAi;
+        try {
+            resolvedOpenAi = openAiChatModelProvider.getIfAvailable();
+        } catch (Exception e) {
+            log.info("OpenAiChatModel 초기화 건너뜀 (SPRING_AI_OPENAI_API_KEY 미설정): {}", e.getMessage());
+            resolvedOpenAi = null;
+        }
+        this.openAiChatModel = resolvedOpenAi;
+
         this.chatMemory = chatMemory;
         this.tokenTrackingAdvisor = tokenTrackingAdvisor;
     }
@@ -147,6 +162,7 @@ public class ChatClientFactory {
         return switch (provider) {
             case "claude"  -> anthropicChatModel != null; // SPRING_AI_ANTHROPIC_API_KEY 설정 여부
             case "gemini"  -> geminiChatModel != null;    // GOOGLE_AI_API_KEY 설정 여부
+            case "openai"  -> openAiChatModel != null;    // SPRING_AI_OPENAI_API_KEY 설정 여부
             case "ollama"  -> true;                       // 로컬 서버 — 항상 사용 가능으로 간주
             default -> false;
         };
@@ -196,6 +212,13 @@ public class ChatClientFactory {
                     .temperature(0.3)
                     .build()
             );
+        } else if ("openai".equals(provider)) {
+            builder.defaultOptions(
+                OpenAiChatOptions.builder()
+                    .model(model)       // 예: gpt-4o-mini, gpt-4.1
+                    .temperature(0.3)
+                    .build()
+            );
         } else {
             // ollama 및 미지 provider → OllamaOptions 적용
             builder.defaultOptions(
@@ -228,6 +251,14 @@ public class ChatClientFactory {
                     );
                 }
                 yield geminiChatModel;
+            }
+            case "openai" -> {
+                if (openAiChatModel == null) {
+                    throw new IllegalStateException(
+                        "OpenAI를 사용하려면 SPRING_AI_OPENAI_API_KEY 환경변수를 설정하세요."
+                    );
+                }
+                yield openAiChatModel;
             }
             default -> ollamaChatModel; // "ollama" 및 알 수 없는 provider → Ollama fallback
         };

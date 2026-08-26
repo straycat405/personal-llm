@@ -549,7 +549,7 @@ function ChatView({
         <span className="font-semibold text-gray-200 truncate">{room.title}</span>
         {/* [신규] 현재 사용 중인 모델 배지 */}
         <span className="text-xs text-gray-600 bg-gray-800 px-2 py-0.5 rounded-full shrink-0">
-          {provider === 'claude' ? '🤖' : '🦙'} {model}
+          {provider === 'claude' ? '🤖' : provider === 'gemini' ? '✨' : provider === 'openai' ? '🧠' : '🦙'} {model}
         </span>
         <span className={`ml-auto shrink-0 text-xs px-2 py-0.5 rounded-full ${
           isConnected ? 'bg-green-950 text-green-400'

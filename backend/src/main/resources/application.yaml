@@ -2,6 +2,25 @@ spring:
   application:
     name: btllm
 
+  # ── .env 파일 로딩 ─────────────────────────────────────────
+  # [설계] backend/.env (gitignore 대상)에 API 키를 두고 여기서 불러온다.
+  #   optional: 파일이 없어도 기동 실패하지 않음. [.properties]는 .env 확장자를
+  #   PropertiesPropertySourceLoader(KEY=VALUE 형식)로 읽으라는 지시.
+  config:
+    import: optional:file:.env[.properties]
+
+  # [설계] spring-ai-starter-model-openai는 Chat/Embedding 외에 Audio Speech(TTS)·
+  #   Audio Transcription·Image·Moderation 오토컨피그까지 함께 들여온다. 이 4개는
+  #   API 키 부재 시 우리 ChatClientFactory처럼 ObjectProvider로 안전하게 감싸져
+  #   있지 않고 즉시(eager) 빈 생성을 시도해 컨텍스트 기동 자체가 실패한다.
+  #   우리는 Chat만 쓰므로 나머지는 명시적으로 제외한다.
+  autoconfigure:
+    exclude:
+      - org.springframework.ai.model.openai.autoconfigure.OpenAiAudioSpeechAutoConfiguration
+      - org.springframework.ai.model.openai.autoconfigure.OpenAiAudioTranscriptionAutoConfiguration
+      - org.springframework.ai.model.openai.autoconfigure.OpenAiImageAutoConfiguration
+      - org.springframework.ai.model.openai.autoconfigure.OpenAiModerationAutoConfiguration
+
   # ── 데이터소스 (pgvector Docker) ──────────────────────────
   datasource:
     url: jdbc:postgresql://localhost:5433/btllm
@@ -27,8 +46,16 @@ spring:
         format_sql: true
         dialect: org.hibernate.dialect.PostgreSQLDialect
 
-  # ── Spring AI - Ollama ────────────────────────────────────
+  # ── Spring AI - Embedding provider 고정 ────────────────────
+  # [설계] OpenAI starter 추가 후 발생한 문제: OpenAiEmbeddingAutoConfiguration과
+  #   OllamaEmbeddingAutoConfiguration 둘 다 spring.ai.model.embedding 미설정 시
+  #   matchIfMissing=true라 동시에 활성화돼 EmbeddingModel 빈이 2개 잡혀 기동 실패
+  #   ("expected single matching bean but found 2"). RAG 임베딩은 한국어 특화
+  #   bge-m3(ollama)로 고정하므로 명시적으로 ollama를 선택한다.
   ai:
+    model:
+      embedding: ollama
+
     ollama:
       base-url: http://localhost:11434   # Ollama 기본 포트
       chat:
@@ -47,6 +74,10 @@ spring:
   #   환경변수 SPRING_AI_ANTHROPIC_API_KEY=sk-ant-...  (Spring Boot 자동 바인딩)
   # 미설정 시 AnthropicChatModel 자동 구성 안 됨 → /api/v1/models available=false 반환
     anthropic:
+      # [주의] Spring의 SPRING_AI_ANTHROPIC_API_KEY 형태 대문자 자동 바인딩은 OS 환경변수에만
+      #   적용되고 .env 같은 properties 파일 키에는 적용되지 않는다. .env로도 주입되도록
+      #   플레이스홀더를 명시한다. 빈 문자열 = 미설정 → 자동 구성 비활성화.
+      api-key: ${SPRING_AI_ANTHROPIC_API_KEY:}
       chat:
         options:
           model: claude-sonnet-4-6        # ChatClientFactory에서 요청별 오버라이드 가능
@@ -63,6 +94,18 @@ spring:
           options:
             model: gemini-2.5-flash           # ChatClientFactory에서 요청별 오버라이드 가능
             temperature: 0.3                  # 낮은 온도 → 일관된 한국어 응답
+
+  # ── Spring AI - OpenAI ─────────────────────────────────────
+  # [설계] API key 주입 방법:
+  #   환경변수 SPRING_AI_OPENAI_API_KEY=sk-...  (Spring Boot 자동 바인딩)
+  # 미설정 시 OpenAiChatModel 자동 구성 안 됨 → /api/v1/models available=false 반환
+  # (로컬 qwen3:8b와의 응답 품질·지연 비교 실험용 — portfolio-improvement-log.md 참고)
+    openai:
+      api-key: ${SPRING_AI_OPENAI_API_KEY:}   # 빈 문자열 = 미설정 → 자동 구성 비활성화
+      chat:
+        options:
+          model: gpt-4o-mini      # ChatClientFactory에서 요청별 오버라이드 가능
+          temperature: 0.3        # 낮은 온도 → 일관된 한국어 응답
 
     chat:
       memory:
