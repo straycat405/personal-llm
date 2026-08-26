@@ -58,10 +58,15 @@ export function useWebSocket({
   const onOpenRef = useRef(onOpen)
   const onCloseRef = useRef(onClose)
   const onReconnectingRef = useRef(onReconnecting)
-  onMessageRef.current = onMessage
-  onOpenRef.current = onOpen
-  onCloseRef.current = onClose
-  onReconnectingRef.current = onReconnecting
+
+  // 렌더 중 ref를 변경하면 React의 순수 렌더링 규칙을 깨므로 commit 이후 동기화한다.
+  // WebSocket effect의 의존성에는 콜백을 넣지 않아 콜백 재생성으로 인한 재연결은 방지한다.
+  useEffect(() => {
+    onMessageRef.current = onMessage
+    onOpenRef.current = onOpen
+    onCloseRef.current = onClose
+    onReconnectingRef.current = onReconnecting
+  }, [onMessage, onOpen, onClose, onReconnecting])
 
   useEffect(() => {
     if (!conversationId) return

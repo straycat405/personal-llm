@@ -211,7 +211,7 @@ class ChatRoomServiceTest {
             ReflectionTestUtils.setField(h2, "createdAt", LocalDateTime.now());
 
             given(chatRoomRepository.findById(1L)).willReturn(Optional.of(room));
-            given(chatHistoryRepository.findByChatRoomIdOrderByCreatedAtAsc(1L))
+            given(chatHistoryRepository.findByChatRoomIdOrderByCreatedAtAscIdAsc(1L))
                 .willReturn(List.of(h1, h2));
 
             // when
@@ -230,7 +230,7 @@ class ChatRoomServiceTest {
         void emptyHistory() {
             // given
             given(chatRoomRepository.findById(1L)).willReturn(Optional.of(room));
-            given(chatHistoryRepository.findByChatRoomIdOrderByCreatedAtAsc(1L))
+            given(chatHistoryRepository.findByChatRoomIdOrderByCreatedAtAscIdAsc(1L))
                 .willReturn(List.of());
 
             // when

@@ -388,24 +388,24 @@ function ChatView({
   provider: string  // [신규] LLM provider (예: "ollama", "claude")
   model: string     // [신규] 모델명 (예: "qwen3:8b", "claude-sonnet-4-6")
 }) {
-  const [messages, setMessages] = useState<Message[]>([])
+  const [messages, setMessages] = useState<Message[]>(() => (
+    initialMessage
+      ? [{ id: crypto.randomUUID(), role: 'user', content: initialMessage }]
+      : []
+  ))
   const [input, setInput] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
   const [isWaiting, setIsWaiting] = useState(false)  // 전송 후 첫 토큰 도착 전 대기
   const [isConnected, setIsConnected] = useState(false)
   const [reconnectInfo, setReconnectInfo] = useState<{ attempt: number; max: number } | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
-  const pendingRef = useRef<string | null>(null)
+  const pendingRef = useRef<string | null>(initialMessage ?? null)
   const sendMsgRef = useRef<(content: string) => boolean>(() => false)
   const lastSentContentRef = useRef<string | null>(null)  // [신규] 재전송 버튼용 — 직전에 보낸 사용자 메시지
 
-  // 마운트 시 처리: initialMessage(자동 생성 흐름) 또는 기존 이력 로드
+  // initialMessage는 state/ref 초기값에서 처리한다. 기존 방일 때만 저장 이력을 비동기로 로드한다.
   useEffect(() => {
-    if (initialMessage) {
-      // 새로 생성된 방: 첫 메시지 낙관적 표시 후 WS 연결 시 자동 전송
-      setMessages([{ id: crypto.randomUUID(), role: 'user', content: initialMessage }])
-      pendingRef.current = initialMessage
-    } else {
+    if (!initialMessage) {
       // 기존 방 선택: DB 저장 이력 로드
       getChatHistories(room.id)
         .then((res) => {
@@ -483,8 +483,10 @@ function ChatView({
     onReconnecting: handleReconnecting,
   })
 
-  // 매 렌더마다 ref 동기화: handleOpen에서 최신 sendMessage 참조 가능
-  sendMsgRef.current = sendMessage
+  // 렌더 중 ref 변경을 피하면서 handleOpen이 최신 sendMessage를 참조하도록 동기화한다.
+  useEffect(() => {
+    sendMsgRef.current = sendMessage
+  }, [sendMessage])
 
   // 새 메시지 추가 시 하단 자동 스크롤
   useEffect(() => {
