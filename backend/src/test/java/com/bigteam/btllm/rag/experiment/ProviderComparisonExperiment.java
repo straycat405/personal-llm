@@ -59,6 +59,13 @@ class ProviderComparisonExperiment {
     private static final String TARGETS = System.getenv()
         .getOrDefault("PROVIDER_COMPARISON_TARGETS", "ollama=qwen3:8b,openai=gpt-4o-mini");
 
+    /**
+     * 반복 횟수. 로컬 모델은 동일 설정에서도 실행 간 편차가 크다(같은 골든셋에서 0%~62.5% 관측).
+     * 단발 실행 결과로 provider 우열을 주장할 수 없으므로 반복 실행과 분산 보고를 지원한다.
+     */
+    private static final int REPETITIONS = Integer.parseInt(System.getenv()
+        .getOrDefault("PROVIDER_COMPARISON_REPETITIONS", "1"));
+
     @Autowired ChatClientFactory chatClientFactory;
     @Autowired LlmTools llmTools;
     @Autowired EtlSourceService etlSourceService;
@@ -74,6 +81,7 @@ class ProviderComparisonExperiment {
 
     record RunResult(
         Target target,
+        int repetition,
         RagAnswerEvaluator.GoldenQuestion golden,
         String answer,
         RagAnswerEvaluator.Evaluation evaluation,
@@ -101,35 +109,38 @@ class ProviderComparisonExperiment {
             }
 
             ChatClient chatClient = chatClientFactory.get(target.provider(), target.model());
-            for (int index = 0; index < goldenSet.size(); index++) {
-                var golden = goldenSet.get(index);
-                String conversationId = "provider-comparison-" + UUID.randomUUID();
-                long startedAt = System.nanoTime();
-                String answer = "";
-                String error = null;
-                try {
-                    answer = chatClient.prompt()
-                        .user(golden.question())
-                        .advisors(spec -> spec.param(ChatMemory.CONVERSATION_ID, conversationId))
-                        .tools(llmTools)
-                        .toolContext(Map.of("conversationId", conversationId))
-                        .call()
-                        .content();
-                } catch (Exception e) {
-                    error = e.getClass().getSimpleName() + ": " + e.getMessage();
+            for (int repetition = 1; repetition <= REPETITIONS; repetition++) {
+                for (int index = 0; index < goldenSet.size(); index++) {
+                    var golden = goldenSet.get(index);
+                    String conversationId = "provider-comparison-" + UUID.randomUUID();
+                    long startedAt = System.nanoTime();
+                    String answer = "";
+                    String error = null;
+                    try {
+                        answer = chatClient.prompt()
+                            .user(golden.question())
+                            .advisors(spec -> spec.param(ChatMemory.CONVERSATION_ID, conversationId))
+                            .tools(llmTools)
+                            .toolContext(Map.of("conversationId", conversationId))
+                            .call()
+                            .content();
+                    } catch (Exception e) {
+                        error = e.getClass().getSimpleName() + ": " + e.getMessage();
+                    }
+                    long latencyMs = (System.nanoTime() - startedAt) / 1_000_000;
+                    var evaluation = evaluator.evaluate(golden, answer);
+                    results.add(new RunResult(
+                        target, repetition, golden, answer, evaluation, latencyMs, error));
+
+                    // 장시간 실행 중 중단되어도 완료분을 잃지 않도록 매 문항마다 보고서를 갱신한다.
+                    writeReport(results, skipped, targets, goldenSet.size());
+
+                    System.out.printf(Locale.US,
+                        "[%s] #%d [%d/%d] %s — pass=%s, facts=%d/%d, latency=%.1fs%s%n",
+                        target.label(), repetition, index + 1, goldenSet.size(), golden.id(),
+                        evaluation.passed(), evaluation.matchedFacts(), evaluation.totalFacts(),
+                        latencyMs / 1000.0, error == null ? "" : " ERROR=" + error);
                 }
-                long latencyMs = (System.nanoTime() - startedAt) / 1_000_000;
-                var evaluation = evaluator.evaluate(golden, answer);
-                results.add(new RunResult(target, golden, answer, evaluation, latencyMs, error));
-
-                // 장시간 실행 중 중단되어도 완료분을 잃지 않도록 매 문항마다 보고서를 갱신한다.
-                writeReport(results, skipped, targets, goldenSet.size());
-
-                System.out.printf(Locale.US,
-                    "[%s] [%d/%d] %s — pass=%s, facts=%d/%d, latency=%.1fs%s%n",
-                    target.label(), index + 1, goldenSet.size(), golden.id(),
-                    evaluation.passed(), evaluation.matchedFacts(), evaluation.totalFacts(),
-                    latencyMs / 1000.0, error == null ? "" : " ERROR=" + error);
             }
         }
 
@@ -174,7 +185,8 @@ class ProviderComparisonExperiment {
             .append(", 재정렬 후보=").append(RagSearchSettings.RERANK_CANDIDATE_K)
             .append(", similarityThreshold=").append(RagSearchSettings.SIMILARITY_THRESHOLD).append("\n");
         report.append("- 평가 문항: ").append(questionCount).append("건 (동일 골든셋)\n");
-        report.append("- 대상: ").append(TARGETS).append("\n\n");
+        report.append("- 대상: ").append(TARGETS).append("\n");
+        report.append("- 반복 횟수: ").append(REPETITIONS).append("\n\n");
 
         report.append("동일한 검색 파이프라인·시스템 프롬프트·골든셋에 **모델만 교체**해 실행한다. ")
             .append("상용 모델은 대체재가 아니라 실패 원인을 검색(파이프라인) 문제와 ")
@@ -214,6 +226,49 @@ class ProviderComparisonExperiment {
                 avgLatencyMs / 1000.0, p95 / 1000.0));
         }
 
+        // [설계] 반복 실행의 핵심은 평균이 아니라 편차다. 로컬 모델은 같은 설정에서도 회차마다
+        //        결과가 흔들리므로, 회차별 통과율을 나열해 단발 결과로 우열을 주장하지 못하게 한다.
+        if (REPETITIONS > 1) {
+            report.append("\n## 회차별 통과율 (실행 간 편차)\n\n");
+            report.append("| Provider / 모델 |");
+            for (int repetition = 1; repetition <= REPETITIONS; repetition++) {
+                report.append(" #").append(repetition).append(" |");
+            }
+            report.append(" 최소~최대 |\n|---|");
+            report.append("---:|".repeat(REPETITIONS + 1));
+            report.append("\n");
+
+            for (Target target : targets) {
+                List<RunResult> targetRuns = results.stream()
+                    .filter(result -> result.target().equals(target)).toList();
+                if (targetRuns.isEmpty()) {
+                    continue;
+                }
+                report.append("| ").append(target.label()).append(" |");
+                double min = Double.MAX_VALUE;
+                double max = -1;
+                for (int repetition = 1; repetition <= REPETITIONS; repetition++) {
+                    final int current = repetition;
+                    List<RunResult> runs = targetRuns.stream()
+                        .filter(run -> run.repetition() == current).toList();
+                    if (runs.isEmpty()) {
+                        report.append(" — |");
+                        continue;
+                    }
+                    long passed = runs.stream().filter(run -> run.evaluation().passed()).count();
+                    double rate = passed * 100.0 / runs.size();
+                    min = Math.min(min, rate);
+                    max = Math.max(max, rate);
+                    report.append(String.format(Locale.US, " %.1f%% (%d/%d) |",
+                        rate, passed, runs.size()));
+                }
+                report.append(max < 0
+                    ? " — |\n"
+                    : String.format(Locale.US, " %.1f%%~%.1f%% |%n", min, max));
+            }
+            report.append("\n");
+        }
+
         report.append("\n## 문항별 통과 여부 비교\n\n");
         report.append("| 문항 | 범주 |");
         for (Target target : targets) {
@@ -232,14 +287,21 @@ class ProviderComparisonExperiment {
         for (var golden : seen) {
             report.append("| ").append(golden.id()).append(" | ").append(golden.category()).append(" |");
             for (Target target : targets) {
-                String cell = results.stream()
-                    .filter(run -> run.target().equals(target) && run.golden().id().equals(golden.id()))
-                    .findFirst()
-                    .map(run -> String.format(Locale.US, "%s %d/%d",
-                        run.evaluation().passed() ? "✅" : "❌",
-                        run.evaluation().matchedFacts(), run.evaluation().totalFacts()))
-                    .orElse("—");
-                report.append(" ").append(cell).append(" |");
+                List<RunResult> runs = results.stream()
+                    .filter(run -> run.target().equals(target)
+                        && run.golden().id().equals(golden.id()))
+                    .toList();
+                if (runs.isEmpty()) {
+                    report.append(" — |");
+                    continue;
+                }
+                long passed = runs.stream().filter(run -> run.evaluation().passed()).count();
+                int matchedFacts = runs.stream().mapToInt(run -> run.evaluation().matchedFacts()).sum();
+                int totalFacts = runs.stream().mapToInt(run -> run.evaluation().totalFacts()).sum();
+                // 반복 실행 시에는 "몇 회 중 몇 회 통과"가 안정성을 보여주는 핵심 정보다.
+                String mark = passed == runs.size() ? "✅" : passed == 0 ? "❌" : "⚠️";
+                report.append(String.format(Locale.US, " %s %d/%d회, 사실 %d/%d |",
+                    mark, passed, runs.size(), matchedFacts, totalFacts));
             }
             report.append("\n");
         }
@@ -251,9 +313,9 @@ class ProviderComparisonExperiment {
             for (Target target : targets) {
                 results.stream()
                     .filter(run -> run.target().equals(target) && run.golden().id().equals(golden.id()))
-                    .findFirst()
-                    .ifPresent(run -> {
-                        report.append("#### ").append(target.label()).append("\n\n");
+                    .forEach(run -> {
+                        report.append("#### ").append(target.label())
+                            .append(REPETITIONS > 1 ? " #" + run.repetition() : "").append("\n\n");
                         if (run.error() != null) {
                             report.append("**오류:** `").append(run.error()).append("`\n\n");
                         }
