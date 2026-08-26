@@ -1,8 +1,174 @@
 # 인수인계 문서
 
-작성일: 2026-08-26
+최종 갱신일: 2026-08-27
 작업 경로: `C:\Users\User\claude-project\personal-llm-remaster`
 저장소: https://github.com/straycat405/personal-llm (브랜치 `main`)
+
+---
+
+## 최신 인수인계 — 2026-08-26~27 Codex 세션
+
+> 이 절이 현재 저장소 상태의 기준이다. 아래의 기존 Claude 세션 기록은 문제 발견 과정과 과거 측정값을
+> 보존한 역사 문서이며, `아직 push 안 됨`, `QUEUED 미구현`, `RAG 수정 미적용` 등의 항목은 이미 해결돼
+> 현재 상태와 다를 수 있다.
+
+### 1. 사용자가 합의한 작업 방식
+
+- 포트폴리오 프로젝트이므로 기능만 완성하지 않고 `문제 → 발견 → 진단 → 해결 → 검증`을 기록한다.
+- 작업을 논리 구간으로 나누고 각 구간마다 전략적으로 커밋·푸시한다.
+- 단발성 성공을 품질 개선으로 주장하지 않고 평가셋·반복 실행·정량 지표로 비교한다.
+- 사용자 응답과 실제 채팅 UI의 Markdown을 일반 상용 LLM처럼 읽기 쉽게 유지한다.
+- Git 브랜치가 필요할 때는 `feat/`, `fix/` 등 일반 형식을 사용하고 `codex/` 접두사는 쓰지 않는다.
+
+### 2. 이 세션에서 완료하고 GitHub에 푸시한 커밋
+
+현재 원격 `origin/main`과 로컬 `main`은 기능·실험 커밋 `c48e985`까지 일치한다.
+
+| 커밋 | 핵심 작업 | 검증·의미 |
+|---|---|---|
+| `9c7c14e` | 백엔드·프론트 품질 게이트 복구 | 테스트·lint·build를 다음 변경의 기준선으로 복원 |
+| `8119362` | RAG 검색 근거 구조화와 실제 파일명 출처 계약 | 관련도 순위·청크 위치·출처를 모델에 전달 |
+| `51a7e44` | RAG topK 5→3, num_ctx 4096 명시 | 검색 문맥 7,540자→4,616자, 38.8% 감소 |
+| `a6f2d42` | PDF 기반 생성 품질 평가셋 | 8문항 실제 qwen3:8b 반복 기준선과 실패 복구형 보고서 |
+| `9757dc1` | 로컬 모델 대기 UX와 Markdown 스트리밍 무결성 | READY/QUEUED/TOKEN 분리, 경과 시간, 표·코드 렌더링 |
+| `c48e985` | 로컬 모델 대화 품질 기준선 | 정체성·기억·주제 전환·출력 계약 평가 하네스와 Qwen3 8B 실측 |
+
+세부 진단 기록은 `docs/portfolio-improvement-log.md`에 누적했다.
+
+### 3. 주요 완료 결과
+
+#### RAG 구조·검색 개선
+
+- `searchKnowledgeBase` 결과를 관련도 순서, 실제 출처, 문서 내 청크 위치와 함께 구조화했다.
+- 작은 모델이 4~5위 부록을 핵심처럼 답하던 문제를 확인해 topK를 3으로 축소했다.
+- “모두의 창업 프로젝트” 개요 질문에서 사업 목적·트랙·선정 규모·지원 내용 관련성을 회복했다.
+- 다만 트랙별 사업자등록 시점·상금·세부 수치 귀속은 여전히 불안정하다.
+
+#### PDF 생성 품질 기준선
+
+`./gradlew ragGenerationQualityExperiment` 실제 실행 결과:
+
+| 지표 | 자동 엄격 기준 |
+|---|---:|
+| 문항 통과율 | 12.5% (1/8) |
+| 필수 사실 포함률 | 28.6% (6/21) |
+| 출처 표시율 | 100% (8/8) |
+| 평균 응답 시간 | 60.4초 |
+| p95 응답 시간 | 87.1초 |
+
+사람 검토 보정은 통과율 37.5%(3/8), 사실 포함률 38.1%(8/21)다. 자동 지표는 반복 비교용으로
+엄격하게 유지한다. 상세 결과는 `docs/rag-generation-quality-experiment.md` 참고.
+
+#### 대기 UX와 Markdown
+
+- WebSocket 연결용 빈 `TOKEN`을 없애고 `READY`, 요청 접수 `QUEUED`, 내용 `TOKEN`을 분리했다.
+- 접수 안내·경과 시간·10초 이후 로컬 모델 지연 안내를 추가했다.
+- 제목·목록·표·코드 블록·코드 복사 UI를 답변 전용 `MarkdownMessage`로 분리했다.
+- 브라우저 E2E에서 실시간 답변만 Markdown 개행이 사라지는 현상을 발견했다.
+- 원인은 `text.isBlank()`가 Ollama의 개행 전용 스트리밍 청크를 버리던 것이며, `isEmpty()`로 좁혀 해결했다.
+- 실제 qwen3:8b 요청에서 QUEUED 표시, 표·코드 렌더링, `복사됨`, 새로고침 후 동일 구조를 확인했다.
+- 브라우저 QA 과정에서 로컬 DB에 임시 `Markdown UI QA` 채팅방과 `codex-ui-*` 테스트 계정이 생겼다.
+  런타임 생성 비밀번호는 저장하지 않았으며 제품 데이터가 아니므로 필요하면 나중에 정리해도 된다.
+
+### 4. 마지막 완료 작업 — 로컬 모델 대화 품질 평가 하네스
+
+아래 파일은 `c48e985 test(llm): add conversational quality baseline`으로 커밋·푸시했다.
+
+| 상태 | 파일 | 내용 |
+|---|---|---|
+| 수정 | `backend/build.gradle` | `localConversationQualityExperiment` 태스크와 일반 테스트 태그 격리 |
+| 신규 | `backend/src/test/java/com/bigteam/btllm/chat/experiment/ConversationAnswerEvaluator.java` | 필수 의미·금지 응답 정규식 판정기 |
+| 신규 | `backend/src/test/java/com/bigteam/btllm/chat/experiment/ConversationAnswerEvaluatorTest.java` | 판정기 단위 테스트 2건 |
+| 신규 | `backend/src/test/java/com/bigteam/btllm/chat/experiment/LocalConversationQualityExperiment.java` | 모델·생성 파라미터별 실제 Ollama 반복 평가 |
+| 신규 | `backend/src/test/resources/conversation-eval/golden-set.json` | 정체성·기억·주제 전환·출력 계약 4개 시나리오 |
+| 신규 | `docs/local-conversation-quality-experiment.md` | 최신 기준선 자동 보고서 |
+| 수정 | `docs/portfolio-improvement-log.md` | 평가 설계·기준선·발견 내용 기록 |
+
+실험기는 다음 환경변수를 지원한다.
+
+```text
+LOCAL_MODEL_EVAL_MODEL
+LOCAL_MODEL_EVAL_TEMPERATURE
+LOCAL_MODEL_EVAL_TOP_P
+LOCAL_MODEL_EVAL_TOP_K
+LOCAL_MODEL_EVAL_THINKING
+LOCAL_MODEL_EVAL_REPETITIONS
+LOCAL_MODEL_EVAL_NUM_CTX
+LOCAL_MODEL_EVAL_NUM_PREDICT
+```
+
+마지막 실행은 정상 완료됐으며 최신 보고서 시각은 `2026-08-27T00:00:24`다.
+
+| 기준선 설정 | 값 |
+|---|---|
+| 모델 | `qwen3:8b` |
+| 생성 | temperature 0.3, top_p 0.8, top_k 20, thinking false |
+| 컨텍스트·출력 | num_ctx 4096, num_predict 768 |
+| 자동 통과율 | 0.0% (0/4) |
+| 요구사항 충족률 | 88.9% (8/9) |
+| 평균 / p95 | 5.5초 / 14.2초 |
+
+#### 기준선에서 분리해낸 원인
+
+- 단기 기억은 코드명 `보라돌이`를 정확히 회상했다.
+- 주제 전환 후에는 자격요건을 반복하지 않고 1인·8주·MVP 아이디어를 제시했다.
+- Markdown 표, 대상 사용자, 수익 모델 계약도 충족했다.
+- 그러나 **문서 검색을 하지 않은 모든 일반 답변에 `[출처]`를 붙였다.**
+- 정체성 질문은 Qwen/알리바바 사칭은 피했지만 서비스 이름 `BTLLM`을 알지 못했다.
+
+따라서 자동 0%를 전부 모델 이해력 실패로 해석하면 안 된다. 현재 공통 실패는 시스템 프롬프트의
+“사용한 문서 파일명을 답변 마지막에 출처로 표시” 규칙이 비-RAG 답변까지 일반화된 영향이 크다.
+
+### 5. 바로 이어서 할 작업 순서
+
+1. **서비스 정체성과 조건부 출처 계약 수정**
+   - 시스템 프롬프트에 “이 서비스는 BTLLM”을 명시한다.
+   - `[출처]`는 `searchKnowledgeBase` 결과를 실제 사용했을 때만 표시하고, 일반 대화·사용자 입력에는 금지한다.
+   - 동일 4문항을 최소 3회 반복해 기준선과 비교한다.
+2. **Qwen3 8B 생성 파라미터 A/B**
+   - A: 0.3 / 0.8 / 20
+   - B: 0.5 / 0.8 / 20
+   - C: 0.7 / 0.8 / 20
+   - 단발 결과가 아니라 시나리오 통과율·요구사항·평균/p95·3회 안정성으로 선택한다.
+3. **Qwen3.5 후보 비교**
+   - 우선 후보: `qwen3.5:4b-q8_0`(약 5.3GB, 현 8B Q4와 비슷한 VRAM 범위).
+   - `qwen3.5:9b`는 약 6.6GB라 bge-m3·KV cache·Windows GPU 사용량까지 합치면 CPU offload 위험이 크다.
+4. **선택적 Thinking과 의도 라우팅**
+   - 일반·문서 요약은 non-thinking, 기획·비교·복합 추론만 thinking을 실험한다.
+   - RAG·대화검색·일반 아이디어 판단을 8B Tool Calling에 전부 맡기지 말고 애플리케이션 라우팅을 검토한다.
+5. **VRAM 최적화**
+   - `OLLAMA_FLASH_ATTENTION=1`, `OLLAMA_KV_CACHE_TYPE=q8_0`, `OLLAMA_NUM_PARALLEL=1` 비교 측정.
+   - bge-m3의 GPU 상주 시간 또는 CPU 실행을 검토한 뒤 VRAM·TTFT·tokens/s로 판단한다.
+
+### 6. 최신 검증 상태와 실행 명령
+
+- 백엔드 일반 테스트: 31건 통과, 실패 0건. 실제 Ollama 실험은 일반 `test`에서 제외된다.
+- 프론트엔드: `npm run lint`, `npm run build` 통과.
+- 마지막 대화 품질 실험: 정상 완료, 4/4 결과 보고서 생성.
+
+```powershell
+cd C:\Users\User\claude-project\personal-llm-remaster\backend
+.\gradlew.bat test
+.\gradlew.bat localConversationQualityExperiment
+```
+
+파라미터 비교 예시:
+
+```powershell
+$env:LOCAL_MODEL_EVAL_TEMPERATURE = "0.5"
+$env:LOCAL_MODEL_EVAL_REPETITIONS = "3"
+.\gradlew.bat localConversationQualityExperiment
+```
+
+### 7. 주의사항
+
+- RTX 4060 Ti 8GB에서 qwen3:8b 약 5.6GB + bge-m3 약 0.7GB라 VRAM 여유가 작다.
+- 브라우저 등 GPU 프로그램 때문에 VRAM이 7.78GB까지 차면 생성 속도가 0.86t/s로 떨어진 전력이 있다.
+- `keep-alive`는 단위 없는 `-1`이 아니라 반드시 `-1s`를 사용한다.
+- 최신 대화 품질 보고서는 매 실험마다 덮어쓴다. 비교 결과를 보존하려면 실행 전후 별도 파일로 복사하거나
+  다음 단계에서 설정별 결과 파일명을 도입한다.
+- 현재 시스템 프롬프트의 출처 규칙을 고치기 전에 파라미터를 비교하면 모든 케이스가 같은 정책 오류로
+  실패하므로 파라미터 효과가 가려진다.
 
 ---
 
