@@ -1,5 +1,9 @@
 # RAG 정확도 실험 결과
 
+> 이 결과는 실험 당시 운영값인 topK=5, similarityThreshold=0.5로 측정했다.
+> 이후 실제 PDF 생성 품질 검증에서 하위 부록 청크가 답변을 오염시키는 문제가 확인되어
+> 운영값은 topK=3으로 변경됐다. 다음 실험 실행 시 현재 운영값으로 보고서가 갱신된다.
+
 골든셋 35건 · 코퍼스: Spring AI 공식 레퍼런스 문서 7페이지 (Advisors/ChatClient/RAG/VectorStore/ETL/ChatMemory/Tools) · 임베딩: bge-m3
 
 ## 청크 크기별 Recall@k

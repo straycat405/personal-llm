@@ -21,6 +21,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import static com.bigteam.btllm.rag.config.RagSearchSettings.SIMILARITY_THRESHOLD;
+import static com.bigteam.btllm.rag.config.RagSearchSettings.TOP_K;
+
 /**
  * [역할] RAG 검색 정확도 실험 — 청크 크기(800/1500/3000)별 Recall@k 측정
  *
@@ -36,7 +39,7 @@ import java.util.Map;
  * - Recall@k: 골든셋 쿼리 1건당 정답 문서가 정확히 1개(sourceUrl)이므로
  *   Hit Rate@k와 수학적으로 동일 — "정답 청크가 top-k 안에 있었는가"의 비율
  * - similarityThreshold=0.0으로 순수 랭킹 성능을 먼저 측정하고,
- *   별도로 운영 설정(topK=5, similarityThreshold=0.5) 기준 Recall도 함께 측정
+ *   별도로 현재 운영 설정 기준 Recall도 함께 측정
  *   → "지금 운영 중인 설정으로 실제 몇 %가 검색되는가"를 바로 보여주기 위함
  */
 @Slf4j
@@ -60,10 +63,6 @@ class RagAccuracyExperiment {
     private static final int[] CHUNK_SIZES = {800, 1500, 3000};
     private static final int MAX_K = 10;
     private static final String EXPERIMENT_TAG = "rag-eval";
-
-    // 운영 환경과 동일한 설정 (ChatClientFactory 참조)
-    private static final int PROD_TOP_K = 5;
-    private static final double PROD_SIMILARITY_THRESHOLD = 0.5;
 
     record GoldenQuery(String id, String topic, String difficulty, String sourceUrl, String query) {}
 
@@ -152,8 +151,8 @@ class RagAccuracyExperiment {
             List<Document> prodHits = vectorStore.similaritySearch(
                 SearchRequest.builder()
                     .query(gq.query())
-                    .topK(PROD_TOP_K)
-                    .similarityThreshold(PROD_SIMILARITY_THRESHOLD)
+                    .topK(TOP_K)
+                    .similarityThreshold(SIMILARITY_THRESHOLD)
                     .filterExpression("experiment == '" + EXPERIMENT_TAG + "'")
                     .build()
             );
@@ -205,7 +204,8 @@ class RagAccuracyExperiment {
           .append("(Advisors/ChatClient/RAG/VectorStore/ETL/ChatMemory/Tools) · 임베딩: bge-m3\n\n");
 
         sb.append("## 청크 크기별 Recall@k\n\n");
-        sb.append("| 청크 크기 | 청크 수 | 임베딩 소요(ms) | Recall@1 | Recall@3 | Recall@5 | Recall@10 | 운영설정 Recall(top5,th=0.5) | 평균 쿼리 지연(ms) |\n");
+        sb.append("| 청크 크기 | 청크 수 | 임베딩 소요(ms) | Recall@1 | Recall@3 | Recall@5 | Recall@10 | 운영설정 Recall(top%d,th=%.1f) | 평균 쿼리 지연(ms) |\n"
+            .formatted(TOP_K, SIMILARITY_THRESHOLD));
         sb.append("|---|---|---|---|---|---|---|---|---|\n");
         for (ChunkSizeResult r : results) {
             sb.append("| %d %s | %d | %d | %.1f%% | %.1f%% | %.1f%% | %.1f%% | %.1f%% | %.0f |\n".formatted(
@@ -229,7 +229,8 @@ class RagAccuracyExperiment {
         sb.append("\n## 측정 방법\n\n");
         sb.append("- Recall@k: 골든셋 쿼리당 정답 문서가 1개뿐이라 Hit Rate@k와 동일 — top-k 검색 결과에 정답 문서의 청크가 하나라도 포함되면 hit\n");
         sb.append("- Recall@1/3/5/10: similarityThreshold=0.0(필터 없이 순수 랭킹) 기준\n");
-        sb.append("- 운영설정 Recall: topK=5, similarityThreshold=0.5 — 실제 배포 중인 SearchRequest 설정과 동일\n");
+        sb.append("- 운영설정 Recall: topK=%d, similarityThreshold=%.1f — 실제 배포 중인 SearchRequest 설정과 동일\n"
+            .formatted(TOP_K, SIMILARITY_THRESHOLD));
 
         Path outPath = Path.of("../docs/rag-accuracy-experiment.md");
         Files.writeString(outPath, sb.toString());

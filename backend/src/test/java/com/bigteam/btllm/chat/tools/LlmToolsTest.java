@@ -59,7 +59,7 @@ class LlmToolsTest {
 
         ArgumentCaptor<SearchRequest> request = ArgumentCaptor.forClass(SearchRequest.class);
         verify(vectorStore).similaritySearch(request.capture());
-        assertThat(request.getValue().getTopK()).isEqualTo(5);
+        assertThat(request.getValue().getTopK()).isEqualTo(3);
         assertThat(request.getValue().getSimilarityThreshold()).isEqualTo(0.5);
     }
 

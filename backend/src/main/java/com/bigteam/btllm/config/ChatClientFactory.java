@@ -38,6 +38,10 @@ import java.util.concurrent.ConcurrentHashMap;
 @Component
 public class ChatClientFactory {
 
+    // RTX 4060 Ti 8GB에서 8192 컨텍스트는 KV cache 증가로 동시성·TTFT를 악화시킬 수 있다.
+    // topK 축소로 검색 컨텍스트를 먼저 줄이고, 품질이 회복된 4096을 명시적으로 고정한다.
+    private static final int OLLAMA_NUM_CTX = 4096;
+
     // [설계] 모든 provider에 동일 적용 — 한국어 강제 + 비한국어 번역 지시
     // [설계] 지식베이스 안내 문구 포함 이유:
     //   RAG를 상시 Advisor에서 Tool로 전환한 뒤(개선안 #4), 모델이 "업로드된 문서가 있다"는
@@ -178,6 +182,7 @@ public class ChatClientFactory {
                 OllamaChatOptions.builder()
                     .model(model)       // 예: qwen3:8b, llama3:8b
                     .temperature(0.3)
+                    .numCtx(OLLAMA_NUM_CTX)
                     .build()
             );
         }

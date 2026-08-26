@@ -4,6 +4,7 @@ import com.bigteam.btllm.chat.entity.ChatHistory;
 import com.bigteam.btllm.chat.entity.MessageRole;
 import com.bigteam.btllm.chat.repository.ChatHistoryRepository;
 import com.bigteam.btllm.chat.repository.ChatRoomRepository;
+import com.bigteam.btllm.rag.config.RagSearchSettings;
 import com.bigteam.btllm.rag.dto.EtlSourceResponse;
 import com.bigteam.btllm.rag.service.EtlSourceService;
 import lombok.RequiredArgsConstructor;
@@ -38,7 +39,6 @@ import java.util.stream.IntStream;
 @Component
 @RequiredArgsConstructor
 public class LlmTools {
-
 	private final ChatRoomRepository chatRoomRepository;
 	private final ChatHistoryRepository chatHistoryRepository;
 	private final VectorStore vectorStore;
@@ -106,7 +106,8 @@ public class LlmTools {
 	}
 
 	// [Tool 3] 지식베이스 검색 — 사용자가 인덱싱된 문서 내용을 물을 때 LLM이 호출
-	// [설계] topK=5, similarityThreshold=0.5 — 기존 SafeQuestionAnswerAdvisor와 동일 파라미터 유지
+	// [설계] topK=3: 실제 PDF 검색에서 1~2위는 정답 청크였지만 4~5위 부록이 답변을 오염시킴.
+	//        작은 로컬 모델과 4096 컨텍스트에서는 검색 재현율보다 distractor 억제를 우선한다.
 	//
 	// [주의] description 문구가 호출률을 좌우한다.
 	//   초기 문구는 "…필요할 때만 사용하세요"처럼 억제형이었는데, qwen3:8b가 문서 관련 질문
@@ -121,7 +122,11 @@ public class LlmTools {
 	) {
 		try {
 			List<Document> results = vectorStore.similaritySearch(
-				SearchRequest.builder().query(query).topK(5).similarityThreshold(0.5).build()
+				SearchRequest.builder()
+					.query(query)
+					.topK(RagSearchSettings.TOP_K)
+					.similarityThreshold(RagSearchSettings.SIMILARITY_THRESHOLD)
+					.build()
 			);
 			// [설계] 호출 여부·적중 건수를 로그로 남김 — Tool 전환 후 "모델이 도구를 호출했는가"가
 			//        RAG 동작의 핵심 변수가 되므로, 로그 없이는 원인 추적이 불가능하다

@@ -164,7 +164,7 @@ pgVector 유사도 검색(임베딩 호출 1회 + DB 쿼리)이 매번 실행된
 **부가 가치**: 이 전환 자체가 "Advisor(상시 개입) vs Tool(선택적 호출)" 트레이드오프를 다루는 좋은 기술적 의사결정 문서 소재가 된다.
 
 **적용 완료**
-- [LlmTools.java](../backend/src/main/java/com/bigteam/btllm/chat/tools/LlmTools.java) — `searchKnowledgeBase` Tool 추가 (topK=5, similarityThreshold=0.5, 기존 값 유지). 임베딩 실패 시 예외 흡수 후 "일반 지식으로 답변" 유도 문구 반환 — 기존 `SafeQuestionAnswerAdvisor`의 graceful degradation과 동일 취지
+- [LlmTools.java](../backend/src/main/java/com/bigteam/btllm/chat/tools/LlmTools.java) — `searchKnowledgeBase` Tool 추가. 최초에는 기존값 topK=5를 유지했으나 실제 PDF 생성 품질 검증에서 하위 부록이 답변을 오염시켜 topK=3으로 조정했다(similarityThreshold=0.5 유지). 임베딩 실패 시 예외를 흡수하는 graceful degradation 적용
 - [ChatClientFactory.java](../backend/src/main/java/com/bigteam/btllm/config/ChatClientFactory.java) — `defaultAdvisors`에서 RAG 어드바이저 제거, 4단계로 축소. 이제 안 쓰는 `SafeQuestionAnswerAdvisor.java`는 삭제
 - [README.md](../README.md) — Advisor 체인·Tool 목록 갱신
 - 검증: 컴파일 통과, 백엔드 재기동 후 정상 채팅 응답 확인 (E2E 1회, GPU 여유 상태)
