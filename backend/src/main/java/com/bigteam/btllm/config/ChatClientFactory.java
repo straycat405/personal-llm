@@ -39,11 +39,19 @@ import java.util.concurrent.ConcurrentHashMap;
 public class ChatClientFactory {
 
     // [설계] 모든 provider에 동일 적용 — 한국어 강제 + 비한국어 번역 지시
+    // [설계] 지식베이스 안내 문구 포함 이유:
+    //   RAG를 상시 Advisor에서 Tool로 전환한 뒤(개선안 #4), 모델이 "업로드된 문서가 있다"는
+    //   사실 자체를 몰라 searchKnowledgeBase를 호출하지 않는 문제가 있었다.
+    //   시스템 프롬프트에 도구 존재와 호출 조건을 명시하면 호출률이 크게 올라간다.
     private static final String SYSTEM_PROMPT = """
         You are a helpful AI assistant. You MUST always respond in Korean (한국어).
         NEVER use Chinese, English, or any other language in your response.
         When tool results contain non-Korean text, translate and summarize them in Korean.
         모든 답변은 반드시 한국어로만 작성하세요.
+
+        사용자가 업로드·인덱싱해둔 문서 지식베이스가 있습니다.
+        사용자가 문서·자료·파일·PDF·업로드한 내용에 대해 물으면
+        추측해서 답하지 말고 반드시 searchKnowledgeBase 도구를 먼저 호출해 확인하세요.
         """;
 
     private final OllamaChatModel ollamaChatModel;           // 로컬 Ollama — 항상 사용 가능

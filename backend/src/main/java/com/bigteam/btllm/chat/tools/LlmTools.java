@@ -4,6 +4,8 @@ import com.bigteam.btllm.chat.entity.ChatHistory;
 import com.bigteam.btllm.chat.entity.MessageRole;
 import com.bigteam.btllm.chat.repository.ChatHistoryRepository;
 import com.bigteam.btllm.chat.repository.ChatRoomRepository;
+import com.bigteam.btllm.rag.dto.EtlSourceResponse;
+import com.bigteam.btllm.rag.service.EtlSourceService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jsoup.Jsoup;
@@ -38,6 +40,7 @@ public class LlmTools {
 	private final ChatRoomRepository chatRoomRepository;
 	private final ChatHistoryRepository chatHistoryRepository;
 	private final VectorStore vectorStore;
+	private final EtlSourceService etlSourceService;  // 검색 0건 시 인덱싱된 문서 목록 안내용
 
 	// [Tool 1] 웹 크롤러 — 사용자가 URL을 언급하거나 최신 정보를 요청할 때 LLM이 자동 호출
 	@Tool(name = "crawlWebPage",
@@ -100,11 +103,17 @@ public class LlmTools {
 			.orElse("대화방을 찾을 수 없습니다.");
 	}
 
-	// [Tool 3] 지식베이스 검색 — 사용자가 인덱싱된 문서 내용을 물을 때만 LLM이 호출
+	// [Tool 3] 지식베이스 검색 — 사용자가 인덱싱된 문서 내용을 물을 때 LLM이 호출
 	// [설계] topK=5, similarityThreshold=0.5 — 기존 SafeQuestionAnswerAdvisor와 동일 파라미터 유지
+	//
+	// [주의] description 문구가 호출률을 좌우한다.
+	//   초기 문구는 "…필요할 때만 사용하세요"처럼 억제형이었는데, qwen3:8b가 문서 관련 질문
+	//   ("방금 준 문서 뭐야?")에도 도구를 전혀 호출하지 않아 RAG가 사실상 동작하지 않았다.
+	//   억제 문구를 빼고 호출 조건을 단정형으로 명시하니 정상 호출됐다.
+	//   (작은 로컬 모델일수록 description의 어조에 민감하다 — 성능·UX 개선안 #4 트러블슈팅 참고)
 	@Tool(name = "searchKnowledgeBase",
-		description = "사용자가 업로드하거나 크롤링해서 인덱싱해둔 문서(지식베이스)에서 질문과 관련된 내용을 검색합니다. " +
-			"일반 상식이나 잡담이 아니라, 특정 문서·자료에 기반한 답변이 필요할 때만 사용하세요.")
+		description = "업로드된 문서(지식베이스)를 검색합니다. " +
+			"사용자가 문서, 자료, 파일, PDF, 업로드한 내용, 인덱싱한 내용에 대해 물으면 반드시 이 도구를 호출하세요.")
 	public String searchKnowledgeBase(
 		@ToolParam(description = "지식베이스에서 검색할 질의문") String query
 	) {
@@ -112,8 +121,23 @@ public class LlmTools {
 			List<Document> results = vectorStore.similaritySearch(
 				SearchRequest.builder().query(query).topK(5).similarityThreshold(0.5).build()
 			);
+			// [설계] 호출 여부·적중 건수를 로그로 남김 — Tool 전환 후 "모델이 도구를 호출했는가"가
+			//        RAG 동작의 핵심 변수가 되므로, 로그 없이는 원인 추적이 불가능하다
+			log.info("지식베이스 검색 — query: {}, 적중: {}건", query, results.size());
 			if (results.isEmpty()) {
-				return "지식베이스에서 관련 문서를 찾지 못했습니다.";
+				// [설계] 0건일 때 인덱싱된 문서 목록을 대신 반환하는 이유:
+				//   "방금 준 문서 뭐야?" 같은 메타 질문은 문서 '내용'과 의미적으로 유사하지 않아
+				//   벡터 검색이 항상 0건을 낸다. 그대로 "못 찾았다"고만 답하면 문서가 멀쩡히
+				//   인덱싱돼 있는데도 없다고 답하게 된다. 목록을 함께 주면 모델이
+				//   "○○ 문서가 있습니다"라고 정확히 답할 수 있다.
+				List<EtlSourceResponse> sources = etlSourceService.listSources();
+				if (sources.isEmpty()) {
+					return "지식베이스가 비어 있습니다. 인덱싱된 문서가 없습니다.";
+				}
+				String list = sources.stream()
+					.map(s -> "- " + s.source() + " (" + s.chunkCount() + "청크)")
+					.collect(Collectors.joining("\n"));
+				return "질의와 직접 일치하는 내용은 찾지 못했습니다. 현재 인덱싱된 문서 목록:\n" + list;
 			}
 			return results.stream()
 				.map(Document::getText)
