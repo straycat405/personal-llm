@@ -59,5 +59,17 @@ dependencyManagement {
 }
 
 tasks.named('test') {
-	useJUnitPlatform()
+	useJUnitPlatform {
+		excludeTags 'experiment'   // 로컬 실험용 — CI/일반 빌드에서 제외
+	}
+}
+
+// 로컬 실행 전용: 실 Ollama + pgVector 필요 (docker compose up -d db, ollama serve)
+tasks.register('ragAccuracyExperiment', Test) {
+	useJUnitPlatform {
+		includeTags 'experiment'
+	}
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+	outputs.upToDateWhen { false }
 }

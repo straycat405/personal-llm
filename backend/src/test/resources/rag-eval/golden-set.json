@@ -1,0 +1,43 @@
+[
+  {"id": "adv-1", "topic": "Advisors", "difficulty": "easy",   "sourceUrl": "https://docs.spring.io/spring-ai/reference/api/advisors.html", "query": "Advisor 인터페이스는 어떤 메서드를 기본으로 가지고 있어?"},
+  {"id": "adv-2", "topic": "Advisors", "difficulty": "easy",   "sourceUrl": "https://docs.spring.io/spring-ai/reference/api/advisors.html", "query": "SafeGuardAdvisor는 어떤 역할을 해?"},
+  {"id": "adv-3", "topic": "Advisors", "difficulty": "medium", "sourceUrl": "https://docs.spring.io/spring-ai/reference/api/advisors.html", "query": "여러 Advisor를 체인으로 실행할 때 우선순위는 어떤 값으로 결정돼?"},
+  {"id": "adv-4", "topic": "Advisors", "difficulty": "medium", "sourceUrl": "https://docs.spring.io/spring-ai/reference/api/advisors.html", "query": "요청은 처음에 처리하고 응답은 마지막에 처리하는 스택 같은 구조라는 게 무슨 의미야?"},
+  {"id": "adv-5", "topic": "Advisors", "difficulty": "hard",   "sourceUrl": "https://docs.spring.io/spring-ai/reference/api/advisors.html", "query": "스트리밍 응답을 처리하는 Advisor 인터페이스와 동기 처리하는 Advisor 인터페이스는 각각 어떤 메서드를 오버라이드해야 해?"},
+
+  {"id": "cc-1", "topic": "ChatClient", "difficulty": "easy",   "sourceUrl": "https://docs.spring.io/spring-ai/reference/api/chatclient.html", "query": "ChatClient에서 대화 기록을 위해 반드시 넘겨야 하는 파라미터 이름이 뭐야?"},
+  {"id": "cc-2", "topic": "ChatClient", "difficulty": "easy",   "sourceUrl": "https://docs.spring.io/spring-ai/reference/api/chatclient.html", "query": "ChatClient.Builder에서 기본 시스템 프롬프트를 설정하는 메서드는?"},
+  {"id": "cc-3", "topic": "ChatClient", "difficulty": "medium", "sourceUrl": "https://docs.spring.io/spring-ai/reference/api/chatclient.html", "query": "ChatClient 응답을 원하는 자바 클래스 타입으로 바로 매핑하고 싶을 때 어떤 메서드를 써?"},
+  {"id": "cc-4", "topic": "ChatClient", "difficulty": "medium", "sourceUrl": "https://docs.spring.io/spring-ai/reference/api/chatclient.html", "query": "ToolCallingAdvisor는 기본적으로 어느 순서 값에 자동 등록돼?"},
+  {"id": "cc-5", "topic": "ChatClient", "difficulty": "hard",   "sourceUrl": "https://docs.spring.io/spring-ai/reference/api/chatclient.html", "query": "MessageWindowChatMemory의 기본 윈도우 크기는 몇 개고, 윈도우가 꽉 찼을 때 시스템 메시지는 어떻게 처리돼?"},
+
+  {"id": "rag-1", "topic": "RAG", "difficulty": "easy",   "sourceUrl": "https://docs.spring.io/spring-ai/reference/api/retrieval-augmented-generation.html", "query": "QuestionAnswerAdvisor를 쓰려면 어떤 의존성을 추가해야 해?"},
+  {"id": "rag-2", "topic": "RAG", "difficulty": "easy",   "sourceUrl": "https://docs.spring.io/spring-ai/reference/api/retrieval-augmented-generation.html", "query": "벡터 검색 유사도 임계값은 어떤 빌더 메서드로 설정해?"},
+  {"id": "rag-3", "topic": "RAG", "difficulty": "medium", "sourceUrl": "https://docs.spring.io/spring-ai/reference/api/retrieval-augmented-generation.html", "query": "사용자의 후속 질문과 이전 대화를 하나의 독립적인 질의로 압축해주는 클래스 이름이 뭐야?"},
+  {"id": "rag-4", "topic": "RAG", "difficulty": "medium", "sourceUrl": "https://docs.spring.io/spring-ai/reference/api/retrieval-augmented-generation.html", "query": "검색된 컨텍스트가 하나도 없을 때 모델이 함부로 답변하지 않게 막으려면 어떤 옵션을 꺼야 해?"},
+  {"id": "rag-5", "topic": "RAG", "difficulty": "hard",   "sourceUrl": "https://docs.spring.io/spring-ai/reference/api/retrieval-augmented-generation.html", "query": "단순한 RAG 흐름이랑 질의 변환·후처리까지 포함하는 고급 RAG 흐름은 단계가 어떻게 다른지 설명해줘"},
+
+  {"id": "vs-1", "topic": "VectorStore", "difficulty": "easy",   "sourceUrl": "https://docs.spring.io/spring-ai/reference/api/vectordbs.html", "query": "SearchRequest의 topK 기본값은 몇이야?"},
+  {"id": "vs-2", "topic": "VectorStore", "difficulty": "easy",   "sourceUrl": "https://docs.spring.io/spring-ai/reference/api/vectordbs.html", "query": "필터 표현식으로 벡터스토어 문서를 지우는 delete 메서드는 어떤 시그니처야?"},
+  {"id": "vs-3", "topic": "VectorStore", "difficulty": "medium", "sourceUrl": "https://docs.spring.io/spring-ai/reference/api/vectordbs.html", "query": "메타데이터 값이 여러 후보 목록 중 하나에 포함되는지 검사하려면 어떤 필터 연산자를 써?"},
+  {"id": "vs-4", "topic": "VectorStore", "difficulty": "medium", "sourceUrl": "https://docs.spring.io/spring-ai/reference/api/vectordbs.html", "query": "SimpleVectorStore를 운영 환경에서 써도 괜찮아?"},
+  {"id": "vs-5", "topic": "VectorStore", "difficulty": "hard",   "sourceUrl": "https://docs.spring.io/spring-ai/reference/api/vectordbs.html", "query": "벡터 데이터베이스가 임베딩을 직접 만들어주는 건지, 아니면 별도 컴포넌트가 필요한 건지 설명해줘"},
+
+  {"id": "etl-1", "topic": "ETL Pipeline", "difficulty": "easy",   "sourceUrl": "https://docs.spring.io/spring-ai/reference/api/etl-pipeline.html", "query": "ETL 파이프라인을 구성하는 3가지 핵심 컴포넌트는 뭐야?"},
+  {"id": "etl-2", "topic": "ETL Pipeline", "difficulty": "easy",   "sourceUrl": "https://docs.spring.io/spring-ai/reference/api/etl-pipeline.html", "query": "TokenTextSplitter의 기본 청크 크기는 토큰 몇 개야?"},
+  {"id": "etl-3", "topic": "ETL Pipeline", "difficulty": "medium", "sourceUrl": "https://docs.spring.io/spring-ai/reference/api/etl-pipeline.html", "query": "KeywordMetadataEnricher가 뽑아낸 키워드는 메타데이터 어떤 키에 저장돼?"},
+  {"id": "etl-4", "topic": "ETL Pipeline", "difficulty": "medium", "sourceUrl": "https://docs.spring.io/spring-ai/reference/api/etl-pipeline.html", "query": "PDF를 페이지 단위 말고 문단 단위로 나눠 읽고 싶으면 어떤 리더를 써야 해?"},
+  {"id": "etl-5", "topic": "ETL Pipeline", "difficulty": "hard",   "sourceUrl": "https://docs.spring.io/spring-ai/reference/api/etl-pipeline.html", "query": "DocumentReader, DocumentTransformer, DocumentWriter는 각각 어떤 자바 함수형 인터페이스를 구현하고 있어?"},
+
+  {"id": "mem-1", "topic": "Chat Memory", "difficulty": "easy",   "sourceUrl": "https://docs.spring.io/spring-ai/reference/api/chat-memory.html", "query": "채팅 메모리랑 채팅 히스토리는 어떻게 다른 개념이야?"},
+  {"id": "mem-2", "topic": "Chat Memory", "difficulty": "easy",   "sourceUrl": "https://docs.spring.io/spring-ai/reference/api/chat-memory.html", "query": "JdbcChatMemoryRepository가 저장하지 못하는 메시지 종류는 뭐야?"},
+  {"id": "mem-3", "topic": "Chat Memory", "difficulty": "medium", "sourceUrl": "https://docs.spring.io/spring-ai/reference/api/chat-memory.html", "query": "MessageWindowChatMemory가 턴 경계 기준으로 메시지를 삭제한다는 게 무슨 뜻이야?"},
+  {"id": "mem-4", "topic": "Chat Memory", "difficulty": "medium", "sourceUrl": "https://docs.spring.io/spring-ai/reference/api/chat-memory.html", "query": "Redis로 채팅 메모리를 저장하려면 어떤 버전 이상의 Redis가 필요해?"},
+  {"id": "mem-5", "topic": "Chat Memory", "difficulty": "hard",   "sourceUrl": "https://docs.spring.io/spring-ai/reference/api/chat-memory.html", "query": "conversationId 파라미터 없이 메모리 어드바이저가 붙은 ChatClient를 호출하면 어떻게 돼?"},
+
+  {"id": "tool-1", "topic": "Tool Calling", "difficulty": "easy",   "sourceUrl": "https://docs.spring.io/spring-ai/reference/api/tools.html", "query": "@Tool 애노테이션에서 모델을 거치지 않고 결과를 바로 반환하려면 어떤 속성을 켜야 해?"},
+  {"id": "tool-2", "topic": "Tool Calling", "difficulty": "easy",   "sourceUrl": "https://docs.spring.io/spring-ai/reference/api/tools.html", "query": "도구 호출 로직을 소유하는 건 애플리케이션이야, 모델이야?"},
+  {"id": "tool-3", "topic": "Tool Calling", "difficulty": "medium", "sourceUrl": "https://docs.spring.io/spring-ai/reference/api/tools.html", "query": "도구가 아주 많을 때 필요한 것만 점진적으로 모델에 노출하는 패턴을 구현한 어드바이저 이름이 뭐야?"},
+  {"id": "tool-4", "topic": "Tool Calling", "difficulty": "medium", "sourceUrl": "https://docs.spring.io/spring-ai/reference/api/tools.html", "query": "전체 도구 호출 횟수 자체에 상한을 걸고 싶으면 ToolCallingManager에서 어떤 설정을 써?"},
+  {"id": "tool-5", "topic": "Tool Calling", "difficulty": "hard",   "sourceUrl": "https://docs.spring.io/spring-ai/reference/api/tools.html", "query": "도구 호출 루프 안에서 대화 기록까지 모델에게 보여주고 싶으면 MessageChatMemoryAdvisor의 order 값을 왜, 얼마로 바꿔야 해?"}
+]
