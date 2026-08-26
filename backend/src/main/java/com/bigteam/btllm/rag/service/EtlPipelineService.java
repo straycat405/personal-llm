@@ -9,6 +9,7 @@ import org.springframework.ai.reader.pdf.PagePdfDocumentReader;
 import org.springframework.ai.reader.tika.TikaDocumentReader;
 import org.springframework.ai.transformer.splitter.TokenTextSplitter;
 import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.Resource;
 import org.springframework.scheduling.annotation.Async;
@@ -31,7 +32,8 @@ import java.util.Objects;
  *   → EtlProgressTracker로 진행률 추적, SSE로 클라이언트에 실시간 전달
  * - KeywordMetadataEnricher: 청크 단위 루프 호출 (배치 아님)
  *   → 청크별 진행률 갱신 가능 (10~90% 구간이 가장 긴 구간)
- * - 청크 크기 1500토큰: 기본값 800 대비 청크 수 절반 → 임베딩 호출 감소
+ * - 청크 크기는 `btllm.rag.chunk-size` 설정값(기본 800). 한때 1500을 썼으나 한국어 공고문에서
+ *   평균 5,425자 청크가 만들어져 topK=3 근거가 num_ctx 4096을 초과했다(2026-08-27 실측).
  */
 @Slf4j
 @Service
@@ -41,6 +43,12 @@ public class EtlPipelineService {
     private final VectorStore vectorStore;
     private final EtlProgressTracker tracker;
     private final DocumentSummarizer documentSummarizer;  // 개요형 질의용 요약 청크 생성
+
+    // [설계] 청크 크기를 설정값으로 뺀 이유: 색인 시점 파라미터라 값을 바꾸려면 재색인이 필요하고,
+    //   골든셋으로 크기별 효과를 비교하려면 코드 수정 없이 주입할 수 있어야 한다.
+    //   기본값 800은 "topK=3 근거가 num_ctx 4096을 넘지 않게" 하려는 값이다(2026-08-27 실측 참고).
+    @Value("${btllm.rag.chunk-size:800}")
+    private int chunkSize;
 
     // ── 비동기 진입점 (@Async) ────────────────────────────────
     // 컨트롤러에서 호출 → Spring AOP 프록시를 통해 별도 스레드에서 실행
@@ -128,9 +136,15 @@ public class EtlPipelineService {
      */
     private void pipelineWithProgress(List<Document> docs, String jobId) {
         // 1단계: 청크 분할 (5 → 25%)
-        List<Document> chunks = new TokenTextSplitter(1500, 200, 5, 10000, true,
+        List<Document> chunks = new TokenTextSplitter(chunkSize, 200, 5, 10000, true,
             List.of('.', '?', '!', '\n')).apply(docs);
-        log.debug("청크 분할 완료 — {} → {} chunks", docs.size(), chunks.size());
+        int avgChars = chunks.isEmpty() ? 0
+            : chunks.stream().mapToInt(chunk -> chunk.getText().length()).sum() / chunks.size();
+        // [설계] 평균 청크 길이를 로그로 남기는 이유: 청크 크기(토큰)와 실제 문자 수의 관계는
+        //   언어·문서마다 다르다. 한국어 공고문에서 1500토큰 설정이 평균 5,425자를 만들어
+        //   topK=3 근거가 num_ctx 4096을 초과하던 문제를 뒤늦게 발견한 전례가 있다.
+        log.info("청크 분할 완료 — {} docs → {} chunks (설정 {}토큰, 평균 {}자)",
+            docs.size(), chunks.size(), chunkSize, avgChars);
         tracker.update(jobId, 25, "청크 분할 완료 (" + chunks.size() + "개)");
 
         // 2단계: 문서 개요 요약 청크 생성 (25 → 40%)
