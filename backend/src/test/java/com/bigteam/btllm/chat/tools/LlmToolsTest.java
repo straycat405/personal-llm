@@ -2,14 +2,17 @@ package com.bigteam.btllm.chat.tools;
 
 import com.bigteam.btllm.chat.repository.ChatHistoryRepository;
 import com.bigteam.btllm.chat.repository.ChatRoomRepository;
+import com.bigteam.btllm.rag.config.RagSearchSettings;
 import com.bigteam.btllm.rag.dto.EtlSourceResponse;
 import com.bigteam.btllm.rag.service.EtlSourceService;
+import com.bigteam.btllm.rag.service.HybridReranker;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
@@ -31,6 +34,7 @@ class LlmToolsTest {
     @Mock ChatHistoryRepository chatHistoryRepository;
     @Mock VectorStore vectorStore;
     @Mock EtlSourceService etlSourceService;
+    @Spy HybridReranker hybridReranker = new HybridReranker();
 
     @InjectMocks LlmTools llmTools;
 
@@ -59,7 +63,7 @@ class LlmToolsTest {
 
         ArgumentCaptor<SearchRequest> request = ArgumentCaptor.forClass(SearchRequest.class);
         verify(vectorStore).similaritySearch(request.capture());
-        assertThat(request.getValue().getTopK()).isEqualTo(3);
+        assertThat(request.getValue().getTopK()).isEqualTo(RagSearchSettings.RERANK_CANDIDATE_K);
         assertThat(request.getValue().getSimilarityThreshold()).isEqualTo(0.5);
     }
 

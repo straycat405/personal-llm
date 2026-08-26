@@ -7,6 +7,7 @@ import com.bigteam.btllm.chat.repository.ChatRoomRepository;
 import com.bigteam.btllm.rag.config.RagSearchSettings;
 import com.bigteam.btllm.rag.dto.EtlSourceResponse;
 import com.bigteam.btllm.rag.service.EtlSourceService;
+import com.bigteam.btllm.rag.service.HybridReranker;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jsoup.Jsoup;
@@ -43,6 +44,7 @@ public class LlmTools {
 	private final ChatHistoryRepository chatHistoryRepository;
 	private final VectorStore vectorStore;
 	private final EtlSourceService etlSourceService;  // 검색 0건 시 인덱싱된 문서 목록 안내용
+	private final HybridReranker hybridReranker;      // 벡터 유사도 + 키워드 겹침 재정렬
 
 	// [Tool 1] 웹 크롤러 — 사용자가 URL을 언급하거나 최신 정보를 요청할 때 LLM이 자동 호출
 	@Tool(name = "crawlWebPage",
@@ -121,16 +123,21 @@ public class LlmTools {
 		@ToolParam(description = "지식베이스에서 검색할 질의문") String query
 	) {
 		try {
-			List<Document> results = vectorStore.similaritySearch(
+			List<Document> candidates = vectorStore.similaritySearch(
 				SearchRequest.builder()
 					.query(query)
-					.topK(RagSearchSettings.TOP_K)
+					.topK(RagSearchSettings.RERANK_CANDIDATE_K)
 					.similarityThreshold(RagSearchSettings.SIMILARITY_THRESHOLD)
 					.build()
 			);
+			// [설계] 후보를 TOP_K(3)보다 넓게(RERANK_CANDIDATE_K=10) 가져온 뒤 키워드 겹침으로
+			//        재정렬해 최종 TOP_K만 프롬프트에 전달한다 — 벡터 유사도 순위가 비슷한
+			//        후보들 사이에서 질문 키워드와 실제로 겹치는 청크를 우선시하기 위함
+			//        (portfolio-improvement-log.md 2026-08-27 리랭커 실험 참고)
+			List<Document> results = hybridReranker.rerank(query, candidates, RagSearchSettings.TOP_K);
 			// [설계] 호출 여부·적중 건수를 로그로 남김 — Tool 전환 후 "모델이 도구를 호출했는가"가
 			//        RAG 동작의 핵심 변수가 되므로, 로그 없이는 원인 추적이 불가능하다
-			log.info("지식베이스 검색 — query: {}, 적중: {}건", query, results.size());
+			log.info("지식베이스 검색 — query: {}, 후보: {}건, 최종: {}건", query, candidates.size(), results.size());
 			if (results.isEmpty()) {
 				// [설계] 0건일 때 인덱싱된 문서 목록을 대신 반환하는 이유:
 				//   "방금 준 문서 뭐야?" 같은 메타 질문은 문서 '내용'과 의미적으로 유사하지 않아
