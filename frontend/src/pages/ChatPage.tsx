@@ -42,6 +42,7 @@ export default function ChatPage() {
   const [initialMsg, setInitialMsg] = useState<string | null>(null)
   const [roomsLoading, setRoomsLoading] = useState(true)  // 채팅방 목록 초기 로딩
   const [ragOpen, setRagOpen] = useState(false)            // 문서 인덱싱 모달 표시
+  const [sidebarOpen, setSidebarOpen] = useState(false)     // [신규] 모바일 사이드바 토글 (개선안 #9)
 
   // [신규] 모델 선택 상태 — 사이드바에서 전역 관리
   const [providers, setProviders] = useState<ProviderInfo[]>([])     // /api/v1/models 결과
@@ -91,6 +92,7 @@ export default function ChatPage() {
     addRoom(room)
     selectRoom(room)
     setInitialMsg(content)
+    setSidebarOpen(false)  // [신규] 모바일 대응
   }
 
   const handleCreateRoom = async (e: React.FormEvent) => {
@@ -105,6 +107,7 @@ export default function ChatPage() {
       selectRoom(room)
       setNewTitle('')
       setInitialMsg(null)
+      setSidebarOpen(false)  // [신규] 모바일 대응
     } finally {
       setCreating(false)
     }
@@ -114,6 +117,7 @@ export default function ChatPage() {
   const handleSelectRoom = (room: ChatRoomResponse) => {
     selectRoom(room)
     setInitialMsg(null)
+    setSidebarOpen(false)  // [신규] 모바일에서 방 선택 시 사이드바 자동 닫힘
   }
 
   const handleDeleteRoom = async (id: number, e: React.MouseEvent) => {
@@ -128,12 +132,32 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="flex h-screen bg-gray-950 text-white overflow-hidden">
+    <div className="flex h-screen bg-gray-950 text-white overflow-hidden relative">
+
+      {/* [신규] 모바일 오버레이 — 사이드바 열렸을 때 바깥 클릭으로 닫기 (개선안 #9) */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black/60 z-30 md:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
 
       {/* ── 사이드바 ── */}
-      <aside className="w-64 shrink-0 bg-gray-900 border-r border-gray-800 flex flex-col">
-        <div className="px-4 py-3 border-b border-gray-800 font-bold text-violet-400 text-lg">
+      {/* [신규] 모바일: 기본 숨김 + 슬라이드인 오버레이 / md 이상: 항상 표시되는 고정 컬럼 */}
+      <aside
+        className={`fixed inset-y-0 left-0 z-40 w-64 shrink-0 bg-gray-900 border-r border-gray-800
+                    flex flex-col transition-transform duration-200 ease-out
+                    md:static md:translate-x-0
+                    ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
+      >
+        <div className="px-4 py-3 border-b border-gray-800 font-bold text-violet-400 text-lg flex items-center justify-between">
           BTLLM
+          {/* [신규] 모바일 전용 닫기 버튼 */}
+          <button
+            onClick={() => setSidebarOpen(false)}
+            className="md:hidden text-gray-500 hover:text-white text-base leading-none"
+            aria-label="사이드바 닫기"
+          >✕</button>
         </div>
 
         {/* 채팅방 수동 생성 폼 (제목 직접 지정) */}
@@ -237,6 +261,15 @@ export default function ChatPage() {
 
       {/* ── 메인 영역 ── */}
       <main className="flex-1 flex flex-col min-w-0">
+        {/* [신규] 모바일 전용 상단바 — 사이드바가 기본 숨김이라 여는 진입점 필요 (개선안 #9) */}
+        <div className="md:hidden flex items-center gap-3 px-4 py-3 border-b border-gray-800 shrink-0">
+          <button
+            onClick={() => setSidebarOpen(true)}
+            className="text-gray-400 hover:text-white text-xl leading-none"
+            aria-label="사이드바 열기"
+          >☰</button>
+          <span className="font-bold text-violet-400 text-sm">BTLLM</span>
+        </div>
         {selectedRoom
           ? (
             // key={room.id}: 방 전환 시 ChatView 재마운트 → WS + 메시지 상태 초기화

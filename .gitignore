@@ -29,3 +29,8 @@ Thumbs.db
 k6/results/
 *.k6.json
 *.k6.csv
+
+# Claude Code 로컬 설정
+.claude/settings.local.json
+.claude/launch.json
+.claude/*.lock
