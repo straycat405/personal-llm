@@ -44,6 +44,32 @@ public class ChatClientFactory {
     // topK 축소로 검색 컨텍스트를 먼저 줄이고, 품질이 회복된 4096을 명시적으로 고정한다.
     private static final int OLLAMA_NUM_CTX = 4096;
 
+    // [설계] 출력 토큰 상한 — 폭주 방지용 안전장치일 뿐, 지연 최적화 수단이 아니다.
+    //
+    //   512로 낮춰 지연을 줄이려 시도했다가 실패했다(2026-08-27 실측).
+    //     지연 88.9초 → 80.5초 (8.4초 절감에 그침)
+    //     출처 표시율 100% → 37.5% (붕괴)
+    //     문항 통과율 50.0% → 25.0%
+    //   `[출처]`는 답변 마지막 줄에 오므로 절단되면 출력 계약이 먼저 깨진다. 반면 필수 사실은
+    //   답변 앞부분에 나와 포함률은 오히려 올랐다(77.8% → 81.0%). 즉 이 절단은 정확도가 아니라
+    //   **계약 준수**를 파괴하며, 그 대가로 얻는 지연 개선은 작다.
+    //
+    //   기본값은 관측된 최대 출력(1,985토큰)을 넘는 값으로 두어 정상 답변을 자르지 않는다.
+    private static final int OLLAMA_NUM_PREDICT =
+        Integer.parseInt(System.getenv().getOrDefault("BTLLM_NUM_PREDICT", "2048"));
+
+    // [설계] qwen3 thinking 모드. 지연과 품질이 정면으로 맞바꿔지므로 설정으로 노출한다.
+    //   동일 골든셋 8문항 실측(2026-08-27):
+    //                     지연(평균/p95)     필수 사실 포함률
+    //     thinking ON     88.9s / 188.6s     77.8%
+    //     thinking OFF    33.0s /  74.5s     57.1%
+    //   속도는 2.7배 빨라지지만 근거 활용도가 20.7%p 떨어진다. 이 서비스는 문서 기반 답변의
+    //   정확도가 존재 이유이므로 기본값은 품질 우선(ON)으로 두고, 응답성이 중요한 사용에는
+    //   BTLLM_THINKING=false로 끌 수 있게 한다.
+    //   (다음 단계: 질의 성격에 따라 자동 선택하는 라우팅 — 단순 조회는 OFF, 복합 추론은 ON)
+    private static final boolean OLLAMA_THINKING =
+        Boolean.parseBoolean(System.getenv().getOrDefault("BTLLM_THINKING", "true"));
+
     // [설계] 모든 provider에 동일 적용 — 한국어 강제 + 비한국어 번역 지시
     // [설계] 지식베이스 안내 문구 포함 이유:
     //   RAG를 상시 Advisor에서 Tool로 전환한 뒤(개선안 #4), 모델이 "업로드된 문서가 있다"는
@@ -221,11 +247,19 @@ public class ChatClientFactory {
             );
         } else {
             // ollama 및 미지 provider → OllamaOptions 적용
+            // [주의] application.yaml의 `ollama.chat.options.think`에 기대면 안 된다.
+            //   여기서 defaultOptions를 통째로 지정하므로 yaml 값이 요청에 실리지 않는다.
+            //   즉 yaml에 `think: false`가 있었는데도 실제로는 thinking이 켜진 채 동작했고,
+            //   보이지 않는 <think> 토큰이 지연의 대부분을 차지하고 있었다.
+            //   설정 항목이 존재한다는 것과 그 값이 요청에 실린다는 것은 다른 문제다
+            //   (`keep-alive: -1` 회귀와 같은 계열의 실수 — 트러블슈팅 4-1 참고).
+            var ollamaOptions = OllamaChatOptions.builder()
+                .model(model)       // 예: qwen3:8b, llama3:8b
+                .temperature(0.3)
+                .numCtx(OLLAMA_NUM_CTX)
+                .numPredict(OLLAMA_NUM_PREDICT);
             builder.defaultOptions(
-                OllamaChatOptions.builder()
-                    .model(model)       // 예: qwen3:8b, llama3:8b
-                    .temperature(0.3)
-                    .numCtx(OLLAMA_NUM_CTX)
+                (OLLAMA_THINKING ? ollamaOptions.enableThinking() : ollamaOptions.disableThinking())
                     .build()
             );
         }
