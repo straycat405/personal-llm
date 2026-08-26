@@ -82,7 +82,7 @@ public class ChatRoomService {
 			throw new BusinessException(ErrorCode.CHAT_ROOM_FORBIDDEN);
 		}
 		// Repository 메서드 이미 존재 (시간순 정렬)
-		return chatHistoryRepository.findByChatRoomIdOrderByCreatedAtAsc(roomId)
+		return chatHistoryRepository.findByChatRoomIdOrderByCreatedAtAscIdAsc(roomId)
 			.stream()
 			.map(ChatHistoryResponse::from)
 			.toList();

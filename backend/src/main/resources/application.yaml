@@ -16,7 +16,10 @@ spring:
   # ── JPA ──────────────────────────────────────────────────
   jpa:
     hibernate:
-      ddl-auto: create   # 개발 중 자동 테이블 생성 (운영 시 validate로 변경)
+      # [설계] create → update: create는 기동할 때마다 테이블을 드롭·재생성해
+      #   계정과 대화 기록이 매번 사라진다. 개발 중에도 이전 대화를 이어서 확인해야 하므로
+      #   스키마 변경분만 반영하는 update로 전환. (운영 배포 시에는 validate + 마이그레이션 도구)
+      ddl-auto: update
     open-in-view: false  # [성능] 커넥션 점유를 트랜잭션 종료 시점에 반환 (기본값 true → HTTP 응답까지 점유)
     show-sql: true
     properties:

@@ -2,6 +2,9 @@ package com.bigteam.btllm.chat.controller;
 
 import com.bigteam.btllm.chat.dto.WsRequest;
 import com.bigteam.btllm.chat.dto.WsResponse;
+import com.bigteam.btllm.chat.entity.ChatHistory;
+import com.bigteam.btllm.chat.entity.MessageRole;
+import com.bigteam.btllm.chat.repository.ChatHistoryRepository;
 import com.bigteam.btllm.chat.repository.ChatRoomRepository;
 import com.bigteam.btllm.chat.tools.LlmTools;
 import com.bigteam.btllm.common.jwt.JwtProvider;
@@ -45,6 +48,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
     // [변경] ChatClient 고정 주입 → ChatClientFactory로 교체 (provider별 동적 라우팅)
     private final ChatClientFactory chatClientFactory;
     private final ChatRoomRepository chatRoomRepository;
+    private final ChatHistoryRepository chatHistoryRepository; // 사용자 메시지 영속화 (표시용 이력)
     private final JwtProvider jwtProvider;
     private final ObjectMapper objectMapper;
     private final LlmTools llmTools; // Tool Calling 3종 (크롤러·이력검색·사용량조회)
@@ -92,12 +96,29 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         }
 
         // conversationId가 요청한 userId 소유인지 검증
-        boolean isOwner = chatRoomRepository.findByConversationId(request.conversationId())
-            .map(room -> room.getUser().getId().equals(userId))
-            .orElse(false);
-        if (!isOwner) {
+        var roomOpt = chatRoomRepository.findByConversationId(request.conversationId())
+            .filter(room -> room.getUser().getId().equals(userId));
+        if (roomOpt.isEmpty()) {
             sendSafe(session, WsResponse.error("채팅방을 찾을 수 없습니다."));
             return;
+        }
+
+        // [설계] 사용자 메시지를 여기서 저장하는 이유:
+        //   TokenTrackingAdvisor는 ASSISTANT 응답만 저장한다. 그래서 새로고침 후
+        //   방을 다시 열면 내 질문은 사라지고 AI 답변만 남아 대화가 이어지지 않았다.
+        //   Advisor 체인 안에서 유추하는 대신, 원본 요청 문자열을 그대로 가진
+        //   이 지점에서 저장해 "무엇을 물었는지"가 정확히 남도록 한다.
+        //   (LLM 자체의 문맥은 Spring AI의 별도 메모리 테이블이 담당 — 표시용과 분리)
+        try {
+            chatHistoryRepository.save(ChatHistory.builder()
+                .chatRoom(roomOpt.get())
+                .role(MessageRole.USER)
+                .content(request.content())
+                .build());
+        } catch (Exception e) {
+            // 이력 저장 실패가 대화 자체를 막지는 않도록 흡수 — 응답은 정상 진행
+            log.warn("사용자 메시지 저장 실패 — conversationId: {}, error: {}",
+                request.conversationId(), e.getMessage());
         }
 
         // [신규] 세션에서 provider·model 꺼내 ChatClient 획득
