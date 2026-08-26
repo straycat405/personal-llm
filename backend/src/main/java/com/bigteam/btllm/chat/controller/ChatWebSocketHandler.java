@@ -1,5 +1,6 @@
 package com.bigteam.btllm.chat.controller;
 
+import com.bigteam.btllm.chat.service.ThinkingRouter;
 import com.bigteam.btllm.chat.dto.WsRequest;
 import com.bigteam.btllm.chat.dto.WsResponse;
 import com.bigteam.btllm.chat.entity.ChatHistory;
@@ -52,6 +53,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
     private final JwtProvider jwtProvider;
     private final ObjectMapper objectMapper;
     private final LlmTools llmTools; // Tool Calling 3종 (크롤러·이력검색·사용량조회)
+    private final ThinkingRouter thinkingRouter; // 질의 성격별 thinking 켬/끔 판정
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) throws Exception {
@@ -138,10 +140,21 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         // 첫 토큰까지 오래 걸려도 사용자가 전송 실패나 멈춤으로 오해하지 않게 한다.
         sendSafe(session, WsResponse.queued("요청을 접수했습니다. 로컬 모델이 답변을 준비하고 있습니다."));
 
+        // [설계] 질의 성격에 따라 thinking을 켜고 끈다. thinking은 지연과 품질을 정면으로
+        //   맞바꾸므로(ON 88.9s/77.8% vs OFF 33.0s/57.1%), 복합 추론이 필요한 질의에만 켠다.
+        //   Ollama 외 provider는 해당 옵션이 없으므로 그대로 둔다.
+        var requestOptions = "ollama".equals(provider)
+            ? chatClientFactory.ollamaOptions(model, thinkingRouter.shouldThink(request.content()))
+            : null;
+
         // Spring AI 스트리밍 시작
         // [설계] .tools()로 Tool 등록, .toolContext()로 conversationId 주입
         //        ToolContext는 LLM 파라미터 스키마에 포함되지 않으므로 내부 식별자 노출 없음
-        chatClient.prompt()
+        var prompt = chatClient.prompt();
+        if (requestOptions != null) {
+            prompt = prompt.options(requestOptions);
+        }
+        prompt
             .user(request.content())
             .advisors(spec -> spec.param(
                 ChatMemory.CONVERSATION_ID, request.conversationId()))

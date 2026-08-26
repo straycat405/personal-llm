@@ -183,6 +183,23 @@ public class ChatClientFactory {
         return cache.computeIfAbsent(provider + ":" + model, k -> build(provider, model));
     }
 
+    /**
+     * 요청별 Ollama 옵션 — thinking만 호출부가 결정하고 나머지는 기본값과 동일하게 유지한다.
+     *
+     * [설계] ChatClient는 provider:model로 캐시되므로 클라이언트 자체에 thinking을 굽지 않는다.
+     *   질의마다 달라져야 하는 값이므로 요청 시점에 주입한다
+     *   (`chatClient.prompt().options(...)`). 캐시된 클라이언트의 기본 옵션은 그대로 두고
+     *   이 메서드가 만든 옵션이 해당 요청에서만 우선한다.
+     */
+    public OllamaChatOptions ollamaOptions(String model, boolean thinking) {
+        var options = OllamaChatOptions.builder()
+            .model(model)
+            .temperature(0.3)
+            .numCtx(OLLAMA_NUM_CTX)
+            .numPredict(OLLAMA_NUM_PREDICT);
+        return (thinking ? options.enableThinking() : options.disableThinking()).build();
+    }
+
     /** 특정 provider 사용 가능 여부 (프론트엔드 /api/v1/models 응답에 사용) */
     public boolean isAvailable(String provider) {
         return switch (provider) {

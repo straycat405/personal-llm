@@ -1,5 +1,6 @@
 package com.bigteam.btllm.rag.experiment;
 
+import com.bigteam.btllm.chat.service.ThinkingRouter;
 import com.bigteam.btllm.chat.tools.LlmTools;
 import com.bigteam.btllm.config.ChatClientFactory;
 import com.bigteam.btllm.rag.config.RagSearchSettings;
@@ -38,6 +39,7 @@ class RagGenerationQualityExperiment {
     private static final String MODEL = "qwen3:8b";
 
     @Autowired ChatClientFactory chatClientFactory;
+    @Autowired ThinkingRouter thinkingRouter;
     @Autowired LlmTools llmTools;
     @Autowired EtlSourceService etlSourceService;
     @Autowired ObjectMapper objectMapper;
@@ -73,7 +75,11 @@ class RagGenerationQualityExperiment {
             String answer = "";
             String error = null;
             try {
+                // 운영 경로와 동일하게 질의별 thinking 라우팅을 적용한다.
+                // 라우팅을 태우지 않으면 실험이 실제 서비스와 다른 조건을 재는 셈이 된다.
                 answer = chatClient.prompt()
+                    .options(chatClientFactory.ollamaOptions(
+                        MODEL, thinkingRouter.shouldThink(golden.question())))
                     .user(golden.question())
                     .advisors(spec -> spec.param(ChatMemory.CONVERSATION_ID, conversationId))
                     .tools(llmTools)
@@ -147,12 +153,15 @@ class RagGenerationQualityExperiment {
 
         report.append("문항 통과 조건: 필수 사실 패턴 100% 포함 + 금지 오답 0건 + `[출처]` 표시.\n\n");
         report.append("## 문항별 결과\n\n");
-        report.append("| ID | 범주 | 통과 | 사실 | 금지 오답 | 출처 | 지연 |\n");
-        report.append("|---|---|---:|---:|---:|---:|---:|\n");
+        report.append("| ID | 범주 | thinking | 통과 | 사실 | 금지 오답 | 출처 | 지연 |\n");
+        report.append("|---|---|---|---:|---:|---:|---:|---:|\n");
         for (QuestionResult result : results) {
             var evaluation = result.evaluation();
+            // 라우팅이 문항마다 어떻게 판정했는지 남긴다. 지연·품질 차이를 해석할 때
+            // 어떤 모드로 답한 결과인지 모르면 비교가 불가능하다.
+            String routed = thinkingRouter.resolveReason(result.golden().question());
             report.append(String.format(Locale.US,
-                "| %s | %s | %s | %d/%d | %d | %s | %.1fs |\n",
+                "| %s | %s | " + routed + " | %s | %d/%d | %d | %s | %.1fs |\n",
                 result.golden().id(), result.golden().category(), evaluation.passed() ? "✅" : "❌",
                 evaluation.matchedFacts(), evaluation.totalFacts(), evaluation.violatedPatterns().size(),
                 evaluation.citedSource() ? "✅" : "❌", result.latencyMs() / 1000.0));
