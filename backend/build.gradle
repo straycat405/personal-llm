@@ -60,7 +60,8 @@ dependencyManagement {
 
 tasks.named('test') {
 	useJUnitPlatform {
-		excludeTags 'experiment'   // 로컬 실험용 — CI/일반 빌드에서 제외
+		// 실제 Ollama·pgVector를 호출하는 장시간 실험은 CI/일반 빌드에서 제외
+		excludeTags 'experiment', 'conversation-experiment'
 	}
 }
 
@@ -90,6 +91,24 @@ tasks.register('ragGenerationQualityExperiment', Test) {
 	}
 	filter {
 		includeTestsMatching 'com.bigteam.btllm.rag.experiment.RagGenerationQualityExperiment'
+	}
+	testLogging {
+		showStandardStreams = true
+	}
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+	outputs.upToDateWhen { false }
+}
+
+// 로컬 실행 전용: 모델·생성 파라미터별 대화 의도와 지시 준수 품질 평가
+tasks.register('localConversationQualityExperiment', Test) {
+	environment 'SPRING_AI_ANTHROPIC_API_KEY', 'dummy'
+	environment 'GOOGLE_AI_API_KEY', 'dummy'
+	useJUnitPlatform {
+		includeTags 'conversation-experiment'
+	}
+	filter {
+		includeTestsMatching 'com.bigteam.btllm.chat.experiment.LocalConversationQualityExperiment'
 	}
 	testLogging {
 		showStandardStreams = true
