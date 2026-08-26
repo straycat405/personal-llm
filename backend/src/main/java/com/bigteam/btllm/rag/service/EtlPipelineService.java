@@ -16,8 +16,10 @@ import org.springframework.stereotype.Service;
 
 import org.jsoup.Jsoup;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Map;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * [역할] ETL(Extract-Transform-Load) 파이프라인 — 문서를 벡터 DB에 적재
@@ -38,6 +40,7 @@ public class EtlPipelineService {
 
     private final VectorStore vectorStore;
     private final EtlProgressTracker tracker;
+    private final DocumentSummarizer documentSummarizer;  // 개요형 질의용 요약 청크 생성
 
     // ── 비동기 진입점 (@Async) ────────────────────────────────
     // 컨트롤러에서 호출 → Spring AOP 프록시를 통해 별도 스레드에서 실행
@@ -124,17 +127,41 @@ public class EtlPipelineService {
      * - 키워드 메타데이터 없이도 bge-m3 벡터 유사도 검색으로 충분한 품질
      */
     private void pipelineWithProgress(List<Document> docs, String jobId) {
-        // 1단계: 청크 분할 (5 → 30%)
+        // 1단계: 청크 분할 (5 → 25%)
         List<Document> chunks = new TokenTextSplitter(1500, 200, 5, 10000, true,
             List.of('.', '?', '!', '\n')).apply(docs);
         log.debug("청크 분할 완료 — {} → {} chunks", docs.size(), chunks.size());
-        tracker.update(jobId, 30, "청크 분할 완료 (" + chunks.size() + "개) — 임베딩 시작");
+        tracker.update(jobId, 25, "청크 분할 완료 (" + chunks.size() + "개)");
 
-        // 2단계: bge-m3 임베딩 + pgVector 저장 (30 → 100%)
-        tracker.update(jobId, 40, "벡터 임베딩 중... (" + chunks.size() + "개 청크)");
-        vectorStore.accept(chunks);
-        log.info("벡터 DB 적재 완료 — {} chunks", chunks.size());
-        tracker.complete(jobId, chunks.size());
+        // 2단계: 문서 개요 요약 청크 생성 (25 → 40%)
+        // [설계] 개요형 질문("이거 무슨 문서야?")은 본문 청크와 의미적으로 멀어 벡터 검색
+        //        후보에 정답이 들어오지 못하는 Recall 실패가 실측으로 확인됐다.
+        //        문서 전체를 요약한 청크를 함께 색인해 개요형 질의에 가까운 후보를 보장한다.
+        //        LLM 1회 호출이라 색인 시간이 늘지만, 색인은 비동기이고 진행률이 노출된다.
+        tracker.update(jobId, 25, "문서 개요 요약 중...");
+        List<Document> summaries = documentSummarizer.summarize(docs, resolveSource(docs));
+
+        List<Document> toIndex = new ArrayList<>(chunks);
+        toIndex.addAll(summaries);
+        tracker.update(jobId, 40, summaries.isEmpty()
+            ? "임베딩 시작 (" + chunks.size() + "개 청크)"
+            : "개요 요약 완료 — 임베딩 시작 (" + chunks.size() + "개 청크 + 개요 1개)");
+
+        // 3단계: bge-m3 임베딩 + pgVector 저장 (40 → 100%)
+        vectorStore.accept(toIndex);
+        log.info("벡터 DB 적재 완료 — 본문 {} chunks + 요약 {} chunks",
+            chunks.size(), summaries.size());
+        tracker.complete(jobId, toIndex.size());
+    }
+
+    /** 청크 메타데이터에 기록된 출처(파일명·URL)를 요약 프롬프트에 전달하기 위해 꺼낸다. */
+    private String resolveSource(List<Document> docs) {
+        return docs.stream()
+            .map(document -> document.getMetadata().get("source"))
+            .filter(Objects::nonNull)
+            .map(String::valueOf)
+            .findFirst()
+            .orElse("업로드한 문서");
     }
 
     // ── 파일명 보존 ByteArrayResource ────────────────────────

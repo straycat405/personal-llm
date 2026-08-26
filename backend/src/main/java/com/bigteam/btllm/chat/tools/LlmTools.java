@@ -6,6 +6,7 @@ import com.bigteam.btllm.chat.repository.ChatHistoryRepository;
 import com.bigteam.btllm.chat.repository.ChatRoomRepository;
 import com.bigteam.btllm.rag.config.RagSearchSettings;
 import com.bigteam.btllm.rag.dto.EtlSourceResponse;
+import com.bigteam.btllm.rag.service.DocumentSummarizer;
 import com.bigteam.btllm.rag.service.EtlSourceService;
 import com.bigteam.btllm.rag.service.HybridReranker;
 import lombok.RequiredArgsConstructor;
@@ -194,8 +195,15 @@ public class LlmTools {
 		String source = String.valueOf(metadata.getOrDefault("source", "출처 미상"));
 		String chunkPosition = formatChunkPosition(metadata);
 
-		return "[관련도 %d위]\n출처: %s%s\n내용:\n%s"
-			.formatted(rank, source, chunkPosition, document.getText());
+		// [설계] 요약 청크는 원문 발췌가 아니라 색인 시점에 생성한 개요다. 이를 구분해주지 않으면
+		//        모델이 요약문의 표현을 원문 인용처럼 다룰 수 있어 근거 종류를 명시한다.
+		String kind = DocumentSummarizer.CHUNK_TYPE_SUMMARY
+			.equals(String.valueOf(metadata.get(DocumentSummarizer.CHUNK_TYPE_KEY)))
+			? "\n근거 종류: 문서 전체 개요 요약(원문 발췌 아님)"
+			: "";
+
+		return "[관련도 %d위]\n출처: %s%s%s\n내용:\n%s"
+			.formatted(rank, source, chunkPosition, kind, document.getText());
 	}
 
 	private String formatChunkPosition(Map<String, Object> metadata) {
