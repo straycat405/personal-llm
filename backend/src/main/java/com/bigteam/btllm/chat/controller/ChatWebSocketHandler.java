@@ -75,8 +75,9 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         session.getAttributes().put("model", model);
 
         log.debug("WS 연결 — session: {}, provider: {}, model: {}", session.getId(), provider, model);
-        send(session, objectMapper.writeValueAsString(
-            WsResponse.builder().type(WsResponse.Type.TOKEN).content("").build()));
+        // 빈 TOKEN은 프론트가 "첫 토큰 도착"으로 오인해 대기 UI를 조기에 숨긴다.
+        // 연결 완료는 내용 스트림과 분리된 READY 이벤트로 전달한다.
+        send(session, objectMapper.writeValueAsString(WsResponse.ready()));
     }
 
     @Override
@@ -133,6 +134,10 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
             return;
         }
 
+        // 서버가 요청을 정상 접수했음을 즉시 알린다. 로컬 모델이 GPU 대기·문서 검색·콜드스타트로
+        // 첫 토큰까지 오래 걸려도 사용자가 전송 실패나 멈춤으로 오해하지 않게 한다.
+        sendSafe(session, WsResponse.queued("요청을 접수했습니다. 로컬 모델이 답변을 준비하고 있습니다."));
+
         // Spring AI 스트리밍 시작
         // [설계] .tools()로 Tool 등록, .toolContext()로 conversationId 주입
         //        ToolContext는 LLM 파라미터 스키마에 포함되지 않으므로 내부 식별자 노출 없음
@@ -152,7 +157,10 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
                     // 구조적 tool call 청크 (toolCalls 필드)는 전송 불필요
                     if (!output.getToolCalls().isEmpty()) return;
                     String text = output.getText();
-                    if (text == null || text.isBlank()) return;
+                    // Markdown의 줄바꿈이 독립적인 공백 청크로 오는 경우가 있다.
+                    // isBlank()로 거르면 저장 이력은 정상인데 실시간 화면에서 제목·목록·표가
+                    // 한 줄로 붙는다. 내용이 완전히 없는 청크만 제외하고 개행은 그대로 전송한다.
+                    if (text == null || text.isEmpty()) return;
                     // [변경] Ollama(qwen2.5/qwen3)만 텍스트 형식 tool call 누출 — provider 조건부 필터
                     if ("ollama".equals(provider) && isToolCallText(text)) return;
                     sendSafe(session, WsResponse.token(text));

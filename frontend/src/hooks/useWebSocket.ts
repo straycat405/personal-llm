@@ -2,9 +2,9 @@ import { useCallback, useEffect, useRef } from 'react'
 
 // 서버 → 클라이언트 WsResponse와 1:1 대응 (백엔드 WsResponse.java)
 export interface WsResponse {
-  type: 'TOKEN' | 'DONE' | 'ERROR'
+  type: 'READY' | 'QUEUED' | 'TOKEN' | 'DONE' | 'ERROR'
   content?: string         // TOKEN 타입
-  message?: string         // ERROR 타입
+  message?: string         // QUEUED·ERROR 타입
   promptTokens?: number
   completionTokens?: number
   totalTokens?: number     // DONE 타입

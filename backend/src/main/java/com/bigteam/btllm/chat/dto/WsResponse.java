@@ -9,6 +9,8 @@ import lombok.Getter;
  *
  * [설계 결정사항]
  * - type 필드로 메시지 종류 구분: 클라이언트가 단일 파서로 처리 가능
+ *   READY: WebSocket 연결·인증 완료
+ *   QUEUED: 사용자 요청을 접수하고 모델 응답을 기다리는 중
  *   TOKEN: LLM 스트리밍 토큰 조각
  *   DONE: 스트리밍 완료 + 토큰 사용량
  *   ERROR: 오류 발생
@@ -19,7 +21,7 @@ import lombok.Getter;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class WsResponse {
 
-	public enum Type { TOKEN, DONE, ERROR }
+	public enum Type { READY, QUEUED, TOKEN, DONE, ERROR }
 
 	private final Type type;
 	private final String content;      // TOKEN 타입
@@ -27,6 +29,14 @@ public class WsResponse {
 	private final Integer promptTokens;
 	private final Integer completionTokens;
 	private final Integer totalTokens; // DONE 타입
+
+	public static WsResponse ready() {
+		return WsResponse.builder().type(Type.READY).build();
+	}
+
+	public static WsResponse queued(String message) {
+		return WsResponse.builder().type(Type.QUEUED).message(message).build();
+	}
 
 	public static WsResponse token(String content) {
 		return WsResponse.builder().type(Type.TOKEN).content(content).build();

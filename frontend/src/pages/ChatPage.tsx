@@ -11,8 +11,7 @@ import TypingIndicator from '@/components/TypingIndicator'
 import SkeletonRoom from '@/components/SkeletonRoom'
 import RagUploadModal from '@/components/RagUploadModal'
 import KnowledgePanel from '@/components/KnowledgePanel'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
+import MarkdownMessage from '@/components/MarkdownMessage'
 
 // ── 로컬 타입 ────────────────────────────────────────────────
 interface Message {
@@ -22,6 +21,8 @@ interface Message {
   isError?: boolean       // true면 TOKEN append 대상에서 제외 (StrictMode 이중 연결 방어)
   retryContent?: string   // [신규] 에러 발생 직전 사용자 메시지 — "다시 시도" 버튼에서 재사용
 }
+
+type ResponsePhase = 'idle' | 'queued' | 'generating'
 
 // ── ChatPage ─────────────────────────────────────────────────
 /**
@@ -395,7 +396,9 @@ function ChatView({
   ))
   const [input, setInput] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
-  const [isWaiting, setIsWaiting] = useState(false)  // 전송 후 첫 토큰 도착 전 대기
+  const [responsePhase, setResponsePhase] = useState<ResponsePhase>('idle')
+  const [queueMessage, setQueueMessage] = useState<string | null>(null)
+  const [elapsedSeconds, setElapsedSeconds] = useState(0)
   const [isConnected, setIsConnected] = useState(false)
   const [reconnectInfo, setReconnectInfo] = useState<{ attempt: number; max: number } | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -421,8 +424,13 @@ function ChatView({
   }, [])  // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleWsMessage = useCallback((res: WsResponse) => {
-    if (res.type === 'TOKEN') {
-      setIsWaiting(false)  // 첫 토큰 도착 → 대기 인디케이터 해제
+    if (res.type === 'READY') {
+      return
+    } else if (res.type === 'QUEUED') {
+      setResponsePhase('queued')
+      setQueueMessage(res.message ?? null)
+    } else if (res.type === 'TOKEN') {
+      setResponsePhase('generating')
       setMessages((prev) => {
         const last = prev[prev.length - 1]
         if (last?.role === 'assistant' && !last.isError) {
@@ -433,10 +441,12 @@ function ChatView({
         return [...prev, { id: crypto.randomUUID(), role: 'assistant', content: res.content ?? '' }]
       })
     } else if (res.type === 'DONE') {
-      setIsWaiting(false)
+      setResponsePhase('idle')
+      setQueueMessage(null)
       setIsStreaming(false)
     } else if (res.type === 'ERROR') {
-      setIsWaiting(false)
+      setResponsePhase('idle')
+      setQueueMessage(null)
       setMessages((prev) => [
         ...prev,
         {
@@ -461,7 +471,8 @@ function ChatView({
       const msg = pendingRef.current
       pendingRef.current = null
       setIsStreaming(true)
-      setIsWaiting(true)
+      setResponsePhase('queued')
+      setElapsedSeconds(0)
       lastSentContentRef.current = msg
       sendMsgRef.current(msg)
     }
@@ -488,6 +499,13 @@ function ChatView({
     sendMsgRef.current = sendMessage
   }, [sendMessage])
 
+  // 모델 응답이 진행되는 동안 사용자에게 실제 경과 시간을 보여준다.
+  useEffect(() => {
+    if (!isStreaming) return
+    const timer = setInterval(() => setElapsedSeconds((seconds) => seconds + 1), 1000)
+    return () => clearInterval(timer)
+  }, [isStreaming])
+
   // 새 메시지 추가 시 하단 자동 스크롤
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -497,7 +515,9 @@ function ChatView({
     if (!content.trim() || isStreaming) return
     setMessages((prev) => [...prev, { id: crypto.randomUUID(), role: 'user', content }])
     setIsStreaming(true)
-    setIsWaiting(true)  // 전송 → 대기 시작
+    setResponsePhase('queued')
+    setQueueMessage(null)
+    setElapsedSeconds(0)
     lastSentContentRef.current = content  // [신규] 재전송 버튼용
     sendMessage(content)  // [설계] 연결 전이어도 훅 내부 큐에 담겼다가 open 시 자동 전송됨 (개선안 #7)
     setInput('')
@@ -552,11 +572,10 @@ function ChatView({
             className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
           >
             <div
-              className={`max-w-[75%] px-4 py-3 rounded-2xl text-sm leading-relaxed
-                          whitespace-pre-wrap break-words ${
+              className={`break-words ${
                 msg.role === 'user'
-                  ? 'bg-violet-800 text-white rounded-br-sm'
-                  : 'bg-gray-800 text-gray-100 rounded-bl-sm'
+                  ? 'max-w-[80%] whitespace-pre-wrap rounded-2xl rounded-br-sm bg-violet-800 px-4 py-3 text-sm leading-relaxed text-white'
+                  : 'w-full max-w-3xl rounded-2xl rounded-bl-sm border border-gray-800 bg-gray-900/70 px-5 py-4 text-gray-100 shadow-sm'
               }`}
             >
               {msg.role === 'user' ? (
@@ -564,15 +583,7 @@ function ChatView({
                 msg.content
               ) : (
                 // assistant 메시지: 마크다운 렌더링
-                <div
-                  className="prose prose-invert prose-sm max-w-none
-                             prose-p:my-1 prose-li:my-0.5 prose-headings:my-2
-                             prose-code:text-violet-300 prose-a:text-violet-400"
-                >
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                    {msg.content}
-                  </ReactMarkdown>
-                </div>
+                <MarkdownMessage content={msg.content} />
               )}
               {/* 스트리밍 커서: 마지막 assistant 메시지에만 표시 */}
               {isStreaming && msg.role === 'assistant' && i === messages.length - 1 && (
@@ -593,7 +604,9 @@ function ChatView({
           </div>
         ))}
         {/* 응답 대기 스피너: 전송 후 첫 토큰 도착 전 */}
-        {isWaiting && <TypingIndicator />}
+        {responsePhase === 'queued' && (
+          <TypingIndicator elapsedSeconds={elapsedSeconds} message={queueMessage} />
+        )}
         <div ref={bottomRef} />
       </div>
 
@@ -608,7 +621,9 @@ function ChatView({
             className="w-full bg-transparent text-white text-sm px-5 py-4 pr-20
                        resize-none outline-none placeholder-gray-600
                        min-h-[56px] max-h-40"
-            placeholder={isStreaming ? '응답 대기 중...' : '메시지 입력 (Shift+Enter: 줄바꿈)'}
+            placeholder={isStreaming
+              ? responsePhase === 'generating' ? '답변 생성 중...' : '답변 준비 중...'
+              : '메시지 입력 (Shift+Enter: 줄바꿈)'}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
