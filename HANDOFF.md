@@ -6,11 +6,128 @@
 
 ---
 
-## 최신 인수인계 — 2026-08-26~27 Codex 세션
+## 최신 인수인계 — 2026-08-27 Claude 세션 (이 절이 현재 기준)
 
-> 이 절이 현재 저장소 상태의 기준이다. 아래의 기존 Claude 세션 기록은 문제 발견 과정과 과거 측정값을
-> 보존한 역사 문서이며, `아직 push 안 됨`, `QUEUED 미구현`, `RAG 수정 미적용` 등의 항목은 이미 해결돼
-> 현재 상태와 다를 수 있다.
+### 0. 사용자가 지시한 작업 방식 (반드시 유지)
+
+- **모든 응답은 한국어로.**
+- 기능 완성보다 **연구·학습 과정의 기록**을 중시한다. 기술 의사결정이 나온 경위를
+  `docs/portfolio-improvement-log.md`에 `문제 → 리서치 → 설계 결정 → 구현 → 검증 → 남은 한계`
+  순서로 누적한다. 포트폴리오 서술의 원재료가 되므로 "왜 그 선택을 했는가"를 반드시 남긴다.
+- **세션이 바뀔 수 있으므로 이 HANDOFF.md를 항상 갱신한다.** 목적은 다음 세션의 AI가 작업 내용뿐
+  아니라 **대화와 의사결정의 맥락**까지 이어받는 것이다.
+- **적절한 타이밍마다 커밋·푸시**한다. 논리 구간 단위로 나눠 전략적으로 커밋한다.
+- **README도 주기적으로 갱신**한다.
+- 단발성 성공을 품질 개선으로 주장하지 않는다. 평가셋·반복 실행·정량 지표로 비교한다.
+- Git 브랜치는 `feat/`, `fix/` 등 일반 형식. `codex/` 접두사 금지.
+
+### 1. 이번 세션의 흐름 (의사결정 맥락)
+
+사용자의 출발 질문은 **"이 프로그램은 사람의 어떤 문제를 해결하는가"** 였고, 합의된 답은:
+*긴 문서(정부 공고문·계약서·매뉴얼)를 다 읽지 않고 자연어로 필요한 답만 얻되, 문서가 외부로
+나가지 않고 API 비용도 들지 않는 로컬 RAG 비서.* 핵심 목표는
+**"개인 PC에서 Ollama 로컬 모델이 정말 쓸 만한 수준이 되게 하는 것"**.
+
+그래서 시행착오 대신 **먼저 웹 리서치**로 8GB급 GPU에서 로컬 LLM을 끌어올리는 방법론을 조사한 뒤,
+근거 있는 순서로 하나씩 적용·측정하기로 했다. 진행 순서와 각 단계의 결론은 다음과 같다.
+
+| 단계 | 조치 | 결과 |
+|---|---|---|
+| 1 | 사전 리서치(리랭킹, VRAM, 모델, tool calling) | 적용 후보 도출, 로그에 출처와 함께 기록 |
+| 2 | 시스템 프롬프트 수정(BTLLM 정체성 + 조건부 `[출처]`) | 정체성 3/3 해결. `[출처]` 오적용은 **프롬프트만으로 한계** 확인 |
+| 3 | 사용자 결정: 출처 가드레일은 **백로그**, 리랭킹으로 진행 | — |
+| 4 | 하이브리드 재정렬(벡터+키워드) 도입 | 통과율 12.5%→25.0%. **랭킹 실패와 Recall 실패를 분리** |
+| 5 | OpenAI provider 연동 + `.env` 키 주입 | 트러블슈팅 3건(임베딩 빈 충돌, TTS 오토컨피그, `.env` 바인딩) |
+| 6 | 동일 골든셋 provider 비교 실험 | **실패 원인을 검색 문제와 모델 체급 문제로 분리** |
+
+### 2. 가장 중요한 산출물 — 실패 원인 분해표
+
+`./gradlew providerComparisonExperiment` 실측(동일 8문항·동일 검색 파이프라인·모델만 교체):
+
+| Provider / 모델 | 통과율 | 사실 포함률 | 평균 지연 | p95 |
+|---|---:|---:|---:|---:|
+| ollama / qwen3:8b | 25.0% (2/8) | 33.3% (7/21) | 47.9s | 64.9s |
+| openai / gpt-4o-mini | 62.5% (5/8) | 76.2% (16/21) | 6.0s | 11.9s |
+
+**이 표가 앞으로의 작업 우선순위를 정한다.**
+
+| 문항 | 해석 | 개선 방향 |
+|---|---|---|
+| `prize-1`, `registration-1` (둘 다 실패) | **검색 문제** — 근거 자체가 후보에 없음 | 질의 확장·요약 청크·임계값 조정 |
+| `track-1`, `round-general-1`, `application-1` (GPT만 성공) | **모델 체급 문제** — 같은 근거로 GPT는 성공 | 파라미터 튜닝·Qwen3.5 교체 |
+| `overview-1` (둘 다 실패, GPT가 더 근접) | 검색 부족 + 체급이 겹침 | 검색 먼저 |
+| `eligibility-1`, `round-local-1` (둘 다 성공) | 정상 | 회귀 감시용 |
+
+앞으로 검색 개선은 위 1행, 모델 개선은 2행으로 효과를 판정하면 된다.
+
+### 3. 바로 이어서 할 작업 (우선순위 순)
+
+1. **검색(Recall) 개선 — `prize-1`·`registration-1`·`overview-1`로 판정**
+   후보 세 가지를 비교한다: (a) `searchKnowledgeBase` description에 "질의를 구체적으로 만들라"는
+   지침 추가, (b) 문서 요약 청크를 별도 인덱싱해 개요 질문에 항상 후보로 포함,
+   (c) `SIMILARITY_THRESHOLD`를 낮춰 후보 폭 확대(노이즈 증가 위험 있음).
+   *근거*: 재정렬은 이미 뽑힌 후보의 순서만 바꾸므로 Recall 실패에는 구조적으로 무력함을
+   4단계에서 실측으로 확인했다.
+2. **provider 비교 실험 반복 실행** — 현재 각 1회라 분산 미측정. 로컬 모델은 같은 8문항에서
+   12.5%~25.0%로 흔들린 전력이 있어, 결론을 굳히려면 3회 반복이 필요하다.
+3. **Qwen3 8B 생성 파라미터 A/B** — temperature 0.3 / 0.5 / 0.7 비교. 판정은 위 2행 문항으로.
+4. **Qwen3.5 후보 비교** — `qwen3.5:4b-q8_0`(약 5.3GB) 우선. `qwen3.5:9b`는 6.6GB라
+   bge-m3·KV cache까지 더하면 CPU offload 위험. **Ollama의 Qwen3.5 지원이 아직 불안정하다는
+   보고가 있어** 저위험 후보부터 시도한다.
+5. **백로그**: `[출처]` 조건부 표시 코드 가드레일, cross-encoder 리랭커(CPU 서빙),
+   Google provider 키 부재 시 기동 실패 근본 수정.
+
+### 4. 이번 세션에서 반드시 알아야 할 함정
+
+- **`.env` 바인딩**: Spring의 `SPRING_AI_..._API_KEY` 대문자 완화 바인딩은 **OS 환경변수에만**
+  적용된다. `.env`(properties) 파일로 주입하려면 yaml에 `api-key: ${SPRING_AI_OPENAI_API_KEY:}`
+  플레이스홀더가 **반드시** 있어야 한다. 없으면 기동은 성공하는데 키만 비어 있다.
+- **멀티 provider 임베딩 충돌**: 스타터를 추가할 때 임베딩 오토컨피그가 `matchIfMissing=true`로
+  겹치면 `EmbeddingModel` 빈이 2개가 되어 기동이 죽는다. `spring.ai.model.embedding: ollama`로
+  고정해둔 상태다.
+- **Google provider**: 키가 비어 있으면 `CachedContentService`가 `ChatClientFactory`의 try-catch
+  밖에서 실패해 앱이 죽는다. Gemini를 안 쓰면 `GOOGLE_AI_API_KEY=dummy`를 넣어야 한다.
+  실험 gradle 태스크들은 이미 더미를 주입하고 있다.
+- **`providerComparisonExperiment`는 실제 과금**이 발생한다. 일반 `test`에서는 태그로 제외돼 있다.
+- 나머지 하드웨어 주의사항(VRAM, `keep-alive: -1s`)은 아래 기존 문서 절을 그대로 따른다.
+
+### 5. 실행 명령
+
+```powershell
+cd C:\Users\User\claude-project\personal-llm-remaster\backend
+.\gradlew.bat test                              # 일반 테스트 (실험 제외)
+.\gradlew.bat ragGenerationQualityExperiment    # PDF 답변 품질
+.\gradlew.bat localConversationQualityExperiment
+.\gradlew.bat providerComparisonExperiment      # 로컬 vs 상용 (과금 주의)
+```
+
+대상 변경 예시:
+
+```powershell
+$env:PROVIDER_COMPARISON_TARGETS = "ollama=qwen3:8b,openai=gpt-4o"
+.\gradlew.bat providerComparisonExperiment
+```
+
+### 6. 보고서 위치
+
+| 파일 | 내용 |
+|---|---|
+| `docs/portfolio-improvement-log.md` | **의사결정 기록의 본체.** 매 작업마다 누적 |
+| `docs/provider-comparison-experiment.md` | 로컬 vs 상용 비교 (신규) |
+| `docs/rag-generation-quality-experiment.md` | PDF 답변 품질 |
+| `docs/local-conversation-quality-experiment.md` | 대화 품질 |
+| `docs/rag-accuracy-experiment.md` | 청크 크기별 Recall |
+| `docs/performance-ux-improvement-plan.md` | 성능·UX 이슈 9건 진단 |
+
+보고서는 **매 실행마다 덮어쓴다.** 비교 결과를 보존하려면 실행 전후로 따로 복사해야 한다.
+
+---
+
+## 이전 인수인계 — 2026-08-26~27 Codex 세션 (역사 기록)
+
+> 위의 2026-08-27 Claude 세션 절이 현재 기준이다. 이 절과 그 아래 기록은 문제 발견 과정과 과거
+> 측정값을 보존한 역사 문서이며, `아직 push 안 됨`, `QUEUED 미구현`, `RAG 수정 미적용` 등의
+> 항목은 이미 해결돼 현재 상태와 다를 수 있다.
 
 ### 1. 사용자가 합의한 작업 방식
 

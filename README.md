@@ -155,10 +155,25 @@ npm run dev
 
 ### 환경 변수
 
+API 키는 `backend/.env`로 주입한다(`.gitignore` 대상). 템플릿을 복사해 채운다.
+
 ```bash
-# 기본값 있음 — 프로덕션 배포 시 반드시 변경
-JWT_SECRET=your-secret-key
+cd backend && cp .env.example .env
 ```
+
+| 변수 | 용도 |
+|---|---|
+| `SPRING_AI_OPENAI_API_KEY` | OpenAI(ChatGPT) provider 활성화 |
+| `SPRING_AI_ANTHROPIC_API_KEY` | Anthropic(Claude) provider 활성화 |
+| `GOOGLE_AI_API_KEY` | Google(Gemini) provider 활성화 |
+| `JWT_SECRET` | 미설정 시 기동마다 랜덤 — 프로덕션은 반드시 고정값 |
+
+Ollama(로컬)는 키가 필요 없다. 키가 없는 provider는 `/api/v1/models`에서 `available=false`로
+표시되고 UI에서 선택이 막힌다.
+
+> **주의** Google provider는 키가 비어 있으면 Spring AI의 `CachedContentService`가
+> 컨텍스트 기동 단계에서 실패한다(우리 `ChatClientFactory`의 예외 흡수 범위 밖).
+> Gemini를 쓰지 않으면 `GOOGLE_AI_API_KEY=dummy`처럼 임의 값을 넣어 기동을 통과시킨다.
 
 ---
 
@@ -171,6 +186,26 @@ cd backend
 
 - `ChatRoomServiceTest` — Mockito 단위 테스트 (DB 불필요)
 - `ChatRoomControllerTest` — MockMvc 슬라이스 테스트 (DB 불필요)
+- `HybridRerankerTest` — RAG 검색 재정렬 로직 단위 테스트 (DB 불필요)
+
+### 품질 평가 실험
+
+실제 Ollama·pgVector(및 상용 API)를 호출하는 장시간 실험은 일반 `test`에서 태그로 제외된다.
+결과는 `docs/` 아래 보고서로 매 실행마다 덮어쓴다.
+
+```bash
+cd backend
+./gradlew ragAccuracyExperiment              # 청크 크기별 검색 Recall
+./gradlew ragGenerationQualityExperiment     # PDF 기반 답변 품질
+./gradlew localConversationQualityExperiment # 대화 품질(정체성·기억·출력 계약)
+./gradlew providerComparisonExperiment       # 동일 골든셋 로컬 vs 상용 모델 비교
+```
+
+`providerComparisonExperiment`는 **상용 API 실제 과금이 발생한다.** 대상은 환경변수로 바꾼다.
+
+```bash
+PROVIDER_COMPARISON_TARGETS='ollama=qwen3:8b,openai=gpt-4o' ./gradlew providerComparisonExperiment
+```
 
 ---
 
