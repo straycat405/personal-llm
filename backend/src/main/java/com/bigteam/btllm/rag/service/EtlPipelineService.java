@@ -2,6 +2,7 @@ package com.bigteam.btllm.rag.service;
 
 import com.bigteam.btllm.common.exception.BusinessException;
 import com.bigteam.btllm.common.exception.ErrorCode;
+import com.bigteam.btllm.common.net.SafeUrlFetcher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.document.Document;
@@ -15,7 +16,6 @@ import org.springframework.core.io.Resource;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
-import org.jsoup.Jsoup;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Map;
@@ -43,6 +43,7 @@ public class EtlPipelineService {
     private final VectorStore vectorStore;
     private final EtlProgressTracker tracker;
     private final DocumentSummarizer documentSummarizer;  // 개요형 질의용 요약 청크 생성
+    private final SafeUrlFetcher safeUrlFetcher;           // SSRF 방어(scheme/포트/사설망 IP/리다이렉트 검증)
 
     // [설계] 청크 크기를 설정값으로 뺀 이유: 색인 시점 파라미터라 값을 바꾸려면 재색인이 필요하고,
     //   골든셋으로 크기별 효과를 비교하려면 코드 수정 없이 주입할 수 있어야 한다.
@@ -57,10 +58,11 @@ public class EtlPipelineService {
     public void ingestUrlAsync(String url, String jobId, Long ownerId) {
         try {
             tracker.update(jobId, 2, "URL 크롤링 중...");
-            org.jsoup.nodes.Document html = Jsoup.connect(url)
-                .userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-                .timeout(15_000)
-                .get();
+            // [보안] 사용자가 제출한 임의 URL을 서버가 대신 요청하는 SSRF 표면이다.
+            //   SafeUrlFetcher가 scheme/포트/사설망 IP/리다이렉트를 검증한 뒤에만 실제로 연결한다(P0 #4).
+            org.jsoup.nodes.Document html = safeUrlFetcher.fetch(url, SafeUrlFetcher.FetchOptions.of(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                15_000, 5 * 1024 * 1024));
 
             String text = html.body().text();
             if (text.isBlank()) {

@@ -4,6 +4,7 @@ import com.bigteam.btllm.chat.entity.ChatHistory;
 import com.bigteam.btllm.chat.entity.MessageRole;
 import com.bigteam.btllm.chat.repository.ChatHistoryRepository;
 import com.bigteam.btllm.chat.repository.ChatRoomRepository;
+import com.bigteam.btllm.common.net.SafeUrlFetcher;
 import com.bigteam.btllm.rag.config.RagSearchSettings;
 import com.bigteam.btllm.rag.dto.EtlSourceResponse;
 import com.bigteam.btllm.rag.service.DocumentSummarizer;
@@ -11,7 +12,6 @@ import com.bigteam.btllm.rag.service.EtlSourceService;
 import com.bigteam.btllm.rag.service.HybridReranker;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.jsoup.Jsoup;
 import org.springframework.ai.chat.model.ToolContext;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.tool.annotation.Tool;
@@ -47,8 +47,12 @@ public class LlmTools {
 	private final VectorStore vectorStore;
 	private final EtlSourceService etlSourceService;  // 검색 0건 시 인덱싱된 문서 목록 안내용
 	private final HybridReranker hybridReranker;      // 벡터 유사도 + 키워드 겹침 재정렬
+	private final SafeUrlFetcher safeUrlFetcher;      // SSRF 방어(scheme/포트/사설망 IP/리다이렉트 검증)
 
 	// [Tool 1] 웹 크롤러 — 사용자가 URL을 언급하거나 최신 정보를 요청할 때 LLM이 자동 호출
+	// [보안] LLM이 프롬프트에서 뽑아낸 URL을 그대로 서버가 요청하는 SSRF 표면이다.
+	//   scheme/포트/사설망 IP 검증과 리다이렉트 재검증은 SafeUrlFetcher가 EtlPipelineService의
+	//   URL 수집 경로와 동일하게 수행한다(P0 #4).
 	@Tool(name = "crawlWebPage",
 		description = "주어진 URL의 웹 페이지를 크롤링하여 텍스트 내용을 반환합니다. " +
 			"사용자가 특정 URL의 내용을 요청하거나 최신 웹 정보가 필요할 때 사용하세요.")
@@ -57,10 +61,8 @@ public class LlmTools {
 	) {
 		try {
 			// User-Agent 설정: 미설정 시 Wikipedia 등에서 HTTP 403 반환
-			String text = Jsoup.connect(url)
-				.userAgent("Mozilla/5.0 (compatible; BTLLM/1.0)")
-				.timeout(10_000)
-				.get()
+			String text = safeUrlFetcher.fetch(url, SafeUrlFetcher.FetchOptions.of(
+					"Mozilla/5.0 (compatible; BTLLM/1.0)", 10_000, 2 * 1024 * 1024))
 				.body()
 				.text();
 

@@ -2,11 +2,15 @@ package com.bigteam.btllm.chat.tools;
 
 import com.bigteam.btllm.chat.repository.ChatHistoryRepository;
 import com.bigteam.btllm.chat.repository.ChatRoomRepository;
+import com.bigteam.btllm.common.net.SafeUrlException;
+import com.bigteam.btllm.common.net.SafeUrlFetcher;
 import com.bigteam.btllm.rag.config.RagSearchSettings;
 import com.bigteam.btllm.rag.dto.EtlSourceResponse;
 import com.bigteam.btllm.rag.service.EtlSourceService;
 import com.bigteam.btllm.rag.service.HybridReranker;
+import org.jsoup.Jsoup;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -24,6 +28,8 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
 
@@ -35,6 +41,7 @@ class LlmToolsTest {
     @Mock ChatHistoryRepository chatHistoryRepository;
     @Mock VectorStore vectorStore;
     @Mock EtlSourceService etlSourceService;
+    @Mock SafeUrlFetcher safeUrlFetcher;
     @Spy HybridReranker hybridReranker = new HybridReranker();
 
     @InjectMocks LlmTools llmTools;
@@ -112,5 +119,33 @@ class LlmToolsTest {
             .contains("[관련도 1위]")
             .contains("출처: 출처 미상")
             .doesNotContain("문서 내 위치:");
+    }
+
+    @Nested
+    @DisplayName("crawlWebPage — SafeUrlFetcher 경유")
+    class CrawlWebPage {
+
+        @Test
+        @DisplayName("SafeUrlFetcher가 반환한 본문 텍스트를 그대로 전달한다")
+        void delegatesToSafeUrlFetcher() throws Exception {
+            org.jsoup.nodes.Document parsed = Jsoup.parse("<html><body>안녕하세요</body></html>");
+            given(safeUrlFetcher.fetch(eq("https://example.com"), any(SafeUrlFetcher.FetchOptions.class)))
+                .willReturn(parsed);
+
+            String result = llmTools.crawlWebPage("https://example.com");
+
+            assertThat(result).isEqualTo("안녕하세요");
+        }
+
+        @Test
+        @DisplayName("SSRF 차단(SafeUrlException) 시 사용자에게 실패 메시지로 안전하게 안내한다")
+        void surfacesSafeUrlExceptionAsFailureMessage() throws Exception {
+            given(safeUrlFetcher.fetch(anyString(), any(SafeUrlFetcher.FetchOptions.class)))
+                .willThrow(new SafeUrlException("사설/루프백/링크로컬 등 접근이 차단된 IP를 가리키는 호스트입니다: 169.254.169.254"));
+
+            String result = llmTools.crawlWebPage("http://169.254.169.254/latest/meta-data/");
+
+            assertThat(result).contains("페이지를 가져오는 데 실패했습니다");
+        }
     }
 }
