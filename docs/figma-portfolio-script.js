@@ -511,8 +511,11 @@ const CW = W - PAD_X * 2; // 콘텐츠 폭 = 1680
   a.appendChild(T('해결 — 단위 명시 -1s', { size: 16, style: S_SEMI, color: C.accent, w: iw }));
 
   const mA = HStack(12);
-  mA.appendChild(Metric((iw - 12) / 2, '100% → 0%', 'k6 에러율'));
-  mA.appendChild(Metric((iw - 12) / 2, '37.2s → 1.2s', '콜드스타트 (-97%)'));
+  // 2단 카드 안의 2칸이라 폭이 좁다 — 기본 크기면 "188.6s → 74.5s"가 두 줄로 접혀
+  // 좌우 카드 높이가 어긋난다. 네 칸 모두 같은 크기로 낮춰 한 줄에 맞춘다.
+  const MW = (iw - 12) / 2, MV = 32;
+  mA.appendChild(Metric(MW, '100% → 0%', 'k6 에러율', { valueSize: MV }));
+  mA.appendChild(Metric(MW, '37.2s → 1.2s', '콜드스타트 (-97%)', { valueSize: MV }));
   a.appendChild(mA);
   two.appendChild(a);
 
@@ -533,8 +536,8 @@ const CW = W - PAD_X * 2; // 콘텐츠 폭 = 1680
     { size: 16, style: S_REG, color: C.gray, w: iw }));
 
   const mB = HStack(12);
-  mB.appendChild(Metric((iw - 12) / 2, '88.9s → 33.0s', '평균 지연 (-63%)'));
-  mB.appendChild(Metric((iw - 12) / 2, '188.6s → 74.5s', 'p95 지연 (-60%)'));
+  mB.appendChild(Metric((iw - 12) / 2, '88.9s → 33.0s', '평균 지연 (-63%)', { valueSize: 32 }));
+  mB.appendChild(Metric((iw - 12) / 2, '188.6s → 74.5s', 'p95 지연 (-60%)', { valueSize: 32 }));
   b.appendChild(mB);
   b.appendChild(T('끄는 것이 정답은 아니었다 — 사실 포함률은 77.8%→57.1%로 함께 떨어졌다. 트레이드오프를 규명하고 기본값은 품질 우선으로 뒀다.',
     { size: 15, style: S_REG, color: C.gray, w: iw }));
