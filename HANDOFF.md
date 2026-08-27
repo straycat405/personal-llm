@@ -20,8 +20,8 @@
 1. ✅ **완료** — P0 보안 #1: Compose JWT 기본 키 제거와 시작 실패 검증 (아래 "P0 #1 완료 기록" 참고)
 2. ✅ **완료** — P0 보안 #2: Docker DB·Grafana·Prometheus·Loki 포트/기본 계정 잠금 (아래 "P0 #2 완료 기록" 참고)
 3. ✅ **완료** — P0 보안 #3: `/api/v1/admin/etl/**` 권한 정책과 RAG 소유권 모델 결정·적용 (아래 "P0 #3 완료 기록" 참고, 사용자가 "사용자별 소유 문서"로 결정)
-4. ⏭ **다음** — P0 보안 #4: ETL 및 LLM 크롤러 SSRF 공통 차단기 구현
-5. P1 성능/안정성: GPU 단일 작업 큐, ETL bounded executor, 사용자별 동시성·취소·과금 한도
+4. ✅ **완료** — P0 보안 #4: ETL 및 LLM 크롤러 SSRF 공통 차단기 구현 (아래 "P0 #4 완료 기록" 참고) — **P0 전체 완료**
+5. ⏭ **다음** — P1 성능/안정성: GPU 단일 작업 큐, ETL bounded executor, 사용자별 동시성·취소·과금 한도
 6. P1 안정성: SSE 스레드/진행정보 수명 관리, WebSocket 구독 취소
 7. P2 유지보수: 스트리밍 문자열 누적, 검색 쿼리·페이지네이션, DB 마이그레이션·운영 프로필
 8. 보수 기준선이 안정된 뒤에만 미커밋 PDF 파서 실험 재개
@@ -141,6 +141,45 @@
   `RagGenerationQualityExperiment.java` 세 파일은 이미 PDF 표 구조 실험으로 미커밋 상태였다.
   `git stash`로 PDF 실험 diff만 분리 → 클린 베이스에 P0 #3 변경만 커밋 → 실험 diff를 다시
   pop해 병합(자동 병합, 충돌 없음)하는 방식으로 두 작업을 커밋 히스토리에서 분리했다. 병합 후
+  전체 컴파일 재확인 완료.
+
+### P0 #4 완료 기록 (ETL·LLM 크롤러 SSRF 공통 차단기) — **P0 전체 완료**
+
+**신규 파일**: [SafeUrlFetcher.java](backend/src/main/java/com/bigteam/btllm/common/net/SafeUrlFetcher.java),
+[SafeUrlException.java](backend/src/main/java/com/bigteam/btllm/common/net/SafeUrlException.java),
+테스트 [SafeUrlFetcherTest.java](backend/src/test/java/com/bigteam/btllm/common/net/SafeUrlFetcherTest.java).
+**변경 파일**: [EtlPipelineService.java](backend/src/main/java/com/bigteam/btllm/rag/service/EtlPipelineService.java)
+(`ingestUrlAsync`), [LlmTools.java](backend/src/main/java/com/bigteam/btllm/chat/tools/LlmTools.java)
+(`crawlWebPage`), `LlmToolsTest.java` 케이스 추가.
+
+- **공통 계층**: `SafeUrlFetcher` 하나를 두 호출부(ETL URL 수집, LLM 크롤러 Tool)가 함께 쓴다 —
+  HANDOFF가 지적한 "두 구현이 따로 검증"하던 문제를 없앴다.
+- **scheme**: http/https만 허용(file:// 등 차단).
+- **포트**: 80/443만 허용 — "웹 페이지 크롤러" 범위를 벗어난 내부 서비스 포트 스캔(DB 5432,
+  Redis 6379, 관리 콘솔 등)을 원천 차단. 필요해지면 설정 가능한 allowlist로 확장.
+- **IP 판정**: 호스트명 패턴이 아니라 실제 DNS 해석 결과(`InetAddress`)로 판정. JDK 플래그
+  (loopback/link-local/site-local/multicast/any-local)로 RFC1918·169.254.0.0/16(클라우드
+  메타데이터 169.254.169.254 포함)·루프백·멀티캐스트를 막고, JDK가 놓치는 구간(0.0.0.0/8,
+  100.64.0.0/10 CGNAT, 240.0.0.0/4 예약대역, IPv6 fc00::/7 unique-local — `isSiteLocalAddress()`는
+  폐기된 `fec0::/10`만 인식)은 바이트 단위로 보충 검사했다.
+- **리다이렉트**: Jsoup 자동 추적을 끄고 직접 순회(최대 5홉), 매 홉마다 scheme/포트/IP를
+  다시 검증 — "1차 URL은 공인 IP인데 302로 내부망으로 리다이렉트"하는 우회를 막는다.
+- **응답 크기**: `maxBodySize`를 명시(ETL 5MB, 챗 크롤러 2MB) — Jsoup 기본값(~2MB)에 암묵적으로
+  기대는 대신 의도를 코드에 명시했다.
+- **알려진 한계(문서화됨, 미해결)**: 검증 시점 DNS 해석 결과로 판단한 뒤 Jsoup이 같은
+  호스트명으로 다시 연결하므로, 검증-연결 사이 DNS가 바뀌는 진짜 DNS-rebinding TOCTOU까지는
+  막지 못한다. 완전 차단하려면 검증에 쓴 IP로 직접 연결(주소 pinning)해야 하는데 Jsoup 커넥션
+  계층을 우회해야 해서 별도 HTTP 클라이언트가 필요하다. 로컬 단일 사용자 앱이라는 위협
+  모델상 우선순위를 낮췄다 — 인터넷 노출·다중 사용자 신뢰 경계 확대 시 먼저 강화해야 할 항목.
+- **검증**: `SafeUrlFetcherTest`가 scheme/포트 거부, IP 차단 매트릭스(JDK 플래그+보충 검사
+  전부), 소켓 연결 전 fail-closed, 리다이렉트 URL 재구성을 IP 리터럴만으로(실 DNS/네트워크
+  없이) 검증한다. 실제 원격 서버 대상 리다이렉트 추적·성공 fetch·응답 크기 제한 자체는 CI에
+  재현 가능한 네트워크가 없어 다루지 않았다 — 필요하면 로컬 HTTP 서버나 WireMock으로 후속
+  검증 권장.
+- **미커밋 PDF 실험과의 충돌 처리**: `EtlPipelineService.java`는 이번에도 PDF 실험으로
+  미커밋 상태였다. 같은 `git stash` 분리 방식을 썼는데, 이번엔 import 블록이 서로 인접해
+  `git stash pop`이 자동 병합에 실패하고 충돌 마커를 남겼다 — 두 import(`SafeUrlFetcher`,
+  `LayoutAwarePdfDocumentReader`)를 수동으로 나란히 남기는 것으로 직접 해결했다. 병합 후
   전체 컴파일 재확인 완료.
 
 ---
