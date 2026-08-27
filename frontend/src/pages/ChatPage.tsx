@@ -76,7 +76,7 @@ export default function ChatPage() {
   }, [])  // eslint-disable-line react-hooks/exhaustive-deps
 
   // [신규] 사이드바 모델 선택 핸들러
-  // value 형식: "provider|model" (예: "claude|claude-sonnet-4-6")
+  // value 형식: "provider|model" (예: "claude|claude-sonnet-5")
   // '|' 구분자 사용 이유: Ollama 모델명에 ':'가 포함됨 (예: qwen3:8b)
   const handleModelChange = (value: string) => {
     const separatorIdx = value.indexOf('|')
@@ -97,10 +97,19 @@ export default function ChatPage() {
     setSidebarOpen(false)  // [신규] 모바일 대응
   }
 
+  // [수정] "+" 버튼이 제목 미입력 시 disabled라 아무 반응이 없어 보였다(사용자 리포트).
+  //   ChatGPT류 UX 기대대로 제목 없이 누르면 방을 바로 만들지 않고 WelcomeView(빈 대화 시작
+  //   화면)로 보낸다 — 방 생성은 첫 메시지 전송 시(handleWelcomeSubmit)로 미룬다.
+  //   제목을 입력한 채로 누르면 기존처럼 그 제목으로 방을 즉시 만든다.
   const handleCreateRoom = async (e: React.FormEvent) => {
     e.preventDefault()
     const title = newTitle.trim()
-    if (!title) return
+    if (!title) {
+      selectRoom(null)
+      setInitialMsg(null)
+      setSidebarOpen(false)
+      return
+    }
     setCreating(true)
     try {
       const res = await createChatRoom(title)
@@ -173,7 +182,8 @@ export default function ChatPage() {
           />
           <button
             type="submit"
-            disabled={creating || !newTitle.trim()}
+            disabled={creating}
+            title="제목을 입력하면 그 이름으로, 비워두면 새 대화 시작 화면으로 이동합니다"
             className="bg-violet-700 hover:bg-violet-600 disabled:opacity-40
                        text-white text-sm rounded-lg px-3 py-1.5 transition shrink-0"
           >+</button>
@@ -387,7 +397,7 @@ function ChatView({
   room: ChatRoomResponse
   initialMessage?: string | null
   provider: string  // [신규] LLM provider (예: "ollama", "claude")
-  model: string     // [신규] 모델명 (예: "qwen3:8b", "claude-sonnet-4-6")
+  model: string     // [신규] 모델명 (예: "qwen3:8b", "claude-sonnet-5")
 }) {
   const [messages, setMessages] = useState<Message[]>(() => (
     initialMessage
