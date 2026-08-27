@@ -168,11 +168,43 @@ public class EtlPipelineService {
             ? "임베딩 시작 (" + chunks.size() + "개 청크)"
             : "개요 요약 완료 — 임베딩 시작 (" + chunks.size() + "개 청크 + 개요 1개)");
 
-        // 3단계: bge-m3 임베딩 + pgVector 저장 (40 → 100%)
-        vectorStore.accept(toIndex);
+        // 3단계: bge-m3 임베딩 + pgVector 저장 (40 → 99%)
+        // [설계] 예전엔 vectorStore.accept(toIndex)를 한 번에 호출해 이 구간이 40%에서 100%로
+        //   바로 뛰었다("몇 단계짜리 임의 진행률" 사용자 피드백). embedding·저장은 청크 단위로
+        //   독립적이라 작은 배치로 나눠 반복 호출해도 최종 결과(전부 적재)는 동일하다 —
+        //   그래서 배치마다 tracker.update()를 불러 실제 처리 비율을 보여준다.
+        //   배치 크기(EMBED_BATCH_SIZE)가 작을수록 진행률이 촘촘해지지만 임베딩 호출 수가
+        //   늘어난다 — 5는 그 균형점으로 잡은 값이다(실측 튜닝 대상).
+        indexInBatches(toIndex, jobId);
         log.info("벡터 DB 적재 완료 — 본문 {} chunks + 요약 {} chunks",
             chunks.size(), summaries.size());
         tracker.complete(jobId, toIndex.size());
+    }
+
+    // [설계] 임베딩 배치 크기. 작을수록 진행률이 촘촘해지고, 클수록 임베딩 호출 수가 줄어든다.
+    private static final int EMBED_BATCH_SIZE = 5;
+
+    /**
+     * toIndex를 작은 배치로 나눠 순차적으로 embedding+저장한다 — 배치 하나가 끝날 때마다
+     * 실제 처리 비율(40~99%)로 진행률을 갱신한다. vectorStore.add()는 배치가 독립적이라
+     * (문서 간 의존 없음) 한 번에 부르든 나눠 부르든 최종 저장 결과는 동일하다.
+     */
+    private void indexInBatches(List<Document> toIndex, String jobId) {
+        int total = toIndex.size();
+        if (total == 0) {
+            return;
+        }
+        int processed = 0;
+        for (int start = 0; start < total; start += EMBED_BATCH_SIZE) {
+            int end = Math.min(start + EMBED_BATCH_SIZE, total);
+            vectorStore.add(toIndex.subList(start, end));
+            processed = end;
+            // [설계] 100%는 tracker.complete()가 별도로 찍는 완료 신호라 배치 루프에서는
+            //   99%를 상한으로 둔다 — "다 됐다"는 완료 이벤트 하나로만 나타내기 위함이다.
+            int progress = 40 + (int) Math.round(processed * 59.0 / total);
+            tracker.update(jobId, Math.min(progress, 99),
+                "임베딩 중 (" + processed + "/" + total + ")");
+        }
     }
 
     /** 청크 메타데이터에 기록된 출처(파일명·URL)를 요약 프롬프트에 전달하기 위해 꺼낸다. */
