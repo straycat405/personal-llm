@@ -10,6 +10,7 @@ import com.bigteam.btllm.chat.repository.ChatRoomRepository;
 import com.bigteam.btllm.chat.tools.LlmTools;
 import com.bigteam.btllm.common.jwt.JwtProvider;
 import com.bigteam.btllm.config.ChatClientFactory;
+import com.bigteam.btllm.user.repository.UserRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.jsonwebtoken.Claims;
 import lombok.RequiredArgsConstructor;
@@ -51,6 +52,8 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
     private final ChatRoomRepository chatRoomRepository;
     private final ChatHistoryRepository chatHistoryRepository; // 사용자 메시지 영속화 (표시용 이력)
     private final JwtProvider jwtProvider;
+    // [보안] REST(JwtAuthFilter)와 동일하게 JWT subject를 활성 사용자 DB 레코드와 대조한다.
+    private final UserRepository userRepository;
     private final ObjectMapper objectMapper;
     private final LlmTools llmTools; // Tool Calling 3종 (크롤러·이력검색·사용량조회)
     private final ThinkingRouter thinkingRouter; // 질의 성격별 thinking 켬/끔 판정
@@ -64,8 +67,13 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
             return;
         }
         Claims claims = jwtProvider.validateAndGetClaims(token);
+        Long userId = Long.valueOf(claims.getSubject());
+        if (!userRepository.existsById(userId)) {
+            session.close(CloseStatus.POLICY_VIOLATION);
+            return;
+        }
         // userId 세션 저장: 이후 메시지 처리 시 재검증 불필요
-        session.getAttributes().put("userId", Long.valueOf(claims.getSubject()));
+        session.getAttributes().put("userId", userId);
 
         // [신규] provider·model 파라미터 추출 → 세션에 저장
         // 기본값: ollama + qwen3:8b → URL 파라미터 없어도 기존 동작 유지 (하위 호환)

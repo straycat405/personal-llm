@@ -1,5 +1,6 @@
 package com.bigteam.btllm.common.jwt;
 
+import com.bigteam.btllm.user.repository.UserRepository;
 import io.jsonwebtoken.Claims;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -19,6 +20,9 @@ import java.util.List;
 public class JwtAuthFilter extends OncePerRequestFilter {
 
     private final JwtProvider jwtProvider;
+    // [보안] JWT subject를 서명 검증만으로 신뢰하지 않고, 매 요청마다 활성 사용자
+    //   DB 레코드와 대조한다 — 탈퇴/삭제된 계정의 토큰이 만료 전까지 계속 통하는 것을 막는다.
+    private final UserRepository userRepository;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
@@ -30,14 +34,17 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         if (StringUtils.hasText(token) && jwtProvider.isValid(token)) {
             Claims claims = jwtProvider.validateAndGetClaims(token);
             Long userId = Long.valueOf(claims.getSubject());
-            String email = claims.get("email", String.class);
 
-            var auth = new UsernamePasswordAuthenticationToken(
-                    new AuthUser(userId, email),
-                    null,
-                    List.of(new SimpleGrantedAuthority("ROLE_USER"))
-            );
-            SecurityContextHolder.getContext().setAuthentication(auth);
+            if (userRepository.existsById(userId)) {
+                String email = claims.get("email", String.class);
+
+                var auth = new UsernamePasswordAuthenticationToken(
+                        new AuthUser(userId, email),
+                        null,
+                        List.of(new SimpleGrantedAuthority("ROLE_USER"))
+                );
+                SecurityContextHolder.getContext().setAuthentication(auth);
+            }
         }
 
         filterChain.doFilter(request, response);

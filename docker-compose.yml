@@ -35,7 +35,9 @@ services:
       SPRING_DATASOURCE_PASSWORD: btllm1234
       # [설계] host.docker.internal: 컨테이너 → 호스트 로컬 Ollama 접근
       SPRING_AI_OLLAMA_BASE_URL: http://host.docker.internal:11434
-      JWT_SECRET: ${JWT_SECRET:-btllm-dev-secret-change-in-production}
+      # [보안] 기본값 없음 — 미설정 시 compose 기동 자체가 실패한다(안전 실패).
+      #   생성 예: openssl rand -base64 32 → .env 파일의 JWT_SECRET=... 에 저장
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET 환경변수가 필요합니다. openssl rand -base64 32 로 생성 후 .env에 저장하세요.}
     volumes:
       - ./backend/logs:/app/logs   # Promtail이 읽을 로그 경로 공유
     depends_on:

@@ -150,7 +150,11 @@ ollama pull bge-m3     # 임베딩
 
 ### Docker Compose 실행 (백엔드 + DB)
 
+`JWT_SECRET` 미설정 시 기동이 실패한다(안전 실패) — 먼저 루트 `.env`를 준비한다.
+
 ```bash
+cp .env.example .env
+# .env의 JWT_SECRET= 뒤에 openssl rand -base64 32 결과를 채운다
 docker compose up -d
 ```
 
@@ -181,7 +185,7 @@ cd backend && cp .env.example .env
 | `SPRING_AI_OPENAI_API_KEY` | OpenAI(ChatGPT) provider 활성화 |
 | `SPRING_AI_ANTHROPIC_API_KEY` | Anthropic(Claude) provider 활성화 |
 | `GOOGLE_AI_API_KEY` | Google(Gemini) provider 활성화 |
-| `JWT_SECRET` | 미설정 시 기동마다 랜덤 — 프로덕션은 반드시 고정값 |
+| `JWT_SECRET` | 직접 실행: 미설정 시 기동마다 랜덤(안전). **Compose/프로덕션: 미설정이면 기동 자체가 실패한다.** `openssl rand -base64 32`로 생성해 루트 `.env`(compose용, `.env.example` 참고)에 저장. 32바이트 미만이거나 알려진 placeholder(`changeme` 등)도 기동 실패 |
 
 Ollama(로컬)는 키가 필요 없다. 키가 없는 provider는 `/api/v1/models`에서 `available=false`로
 표시되고 UI에서 선택이 막힌다.

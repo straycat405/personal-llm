@@ -8,6 +8,7 @@ import com.bigteam.btllm.common.exception.BusinessException;
 import com.bigteam.btllm.common.exception.ErrorCode;
 import com.bigteam.btllm.common.jwt.AuthUser;
 import com.bigteam.btllm.common.jwt.JwtProvider;
+import com.bigteam.btllm.user.repository.UserRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -42,8 +43,9 @@ class ChatRoomControllerTest {
     @Autowired ObjectMapper objectMapper;
 
     @MockitoBean ChatRoomService chatRoomService;
-    // [설계] SecurityConfig가 JwtProvider 생성자 주입 → @MockitoBean으로 의존성 충족
+    // [설계] SecurityConfig가 JwtProvider/UserRepository 생성자 주입 → @MockitoBean으로 의존성 충족
     @MockitoBean JwtProvider jwtProvider;
+    @MockitoBean UserRepository userRepository;
 
     // ── 픽스처 ───────────────────────────────────────────────────
     private static final Long USER_ID = 1L;

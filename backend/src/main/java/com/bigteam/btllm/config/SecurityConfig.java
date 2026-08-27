@@ -2,6 +2,7 @@ package com.bigteam.btllm.config;
 
 import com.bigteam.btllm.common.jwt.JwtAuthFilter;
 import com.bigteam.btllm.common.jwt.JwtProvider;
+import com.bigteam.btllm.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -25,6 +26,7 @@ import org.springframework.security.web.context.RequestAttributeSecurityContextR
 public class SecurityConfig {
 
     private final JwtProvider jwtProvider;
+    private final UserRepository userRepository;
 
     @Bean
     public PasswordEncoder passwordEncoder() {
@@ -64,7 +66,7 @@ public class SecurityConfig {
             )
             .httpBasic(AbstractHttpConfigurer::disable)
             .formLogin(AbstractHttpConfigurer::disable)
-            .addFilterBefore(new JwtAuthFilter(jwtProvider), UsernamePasswordAuthenticationFilter.class);
+            .addFilterBefore(new JwtAuthFilter(jwtProvider, userRepository), UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }

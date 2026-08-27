@@ -29,7 +29,9 @@ jobs:
         working-directory: backend
         run: ./gradlew test
         env:
-          JWT_SECRET: test-secret-for-ci-only
+          # [보안] JwtProvider가 32바이트(256비트) 미만 secret과 알려진 placeholder를
+          #   기동 실패로 거부한다 — CI도 실제 요구치를 충족하는 값을 사용한다.
+          JWT_SECRET: ci-only-test-secret-not-for-any-real-deployment-use
 
       # 테스트 결과를 PR 코멘트/Summary에 표시
       - uses: actions/upload-artifact@v4
