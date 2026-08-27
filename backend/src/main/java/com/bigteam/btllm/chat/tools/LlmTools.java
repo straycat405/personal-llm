@@ -19,6 +19,7 @@ import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.ai.vectorstore.filter.FilterExpressionBuilder;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -48,6 +49,9 @@ public class LlmTools {
 	private final EtlSourceService etlSourceService;  // 검색 0건 시 인덱싱된 문서 목록 안내용
 	private final HybridReranker hybridReranker;      // 벡터 유사도 + 키워드 겹침 재정렬
 	private final SafeUrlFetcher safeUrlFetcher;      // SSRF 방어(scheme/포트/사설망 IP/리다이렉트 검증)
+
+	// 이력 검색 결과 상한 — SQL LIMIT으로 내려보내는 값이라 Java에서 다시 자르지 않는다
+	private static final int HISTORY_SEARCH_LIMIT = 5;
 
 	// [Tool 1] 웹 크롤러 — 사용자가 URL을 언급하거나 최신 정보를 요청할 때 LLM이 자동 호출
 	// [보안] LLM이 프롬프트에서 뽑아낸 URL을 그대로 서버가 요청하는 SSRF 표면이다.
@@ -94,17 +98,16 @@ public class LlmTools {
 		// conversationId → chatRoomId 조회
 		return chatRoomRepository.findByConversationId(conversationId)
 			.map(room -> {
-				// 키워드 포함 메시지 검색 (대소문자 무시)
+				// [변경] 상한을 SQL LIMIT으로 내렸다. 예전에는 매칭 전체를 받아온 뒤
+				//   Java에서 .limit(5)로 잘랐는데, 버릴 행까지 DB가 정렬해 전송하는 낭비였다.
 				List<ChatHistory> results = chatHistoryRepository
-					.findByChatRoomIdAndKeyword(room.getId(), keyword);
+					.findByChatRoomIdAndKeyword(room.getId(), keyword, PageRequest.of(0, HISTORY_SEARCH_LIMIT));
 
 				if (results.isEmpty()) {
 					return "'" + keyword + "'에 대한 이전 대화 내용을 찾을 수 없습니다.";
 				}
 
-				// 최대 5개, 발신자+내용 형식으로 반환
 				return results.stream()
-					.limit(5)
 					.map(h -> "[" + h.getRole() + "] " + h.getContent())
 					.collect(Collectors.joining("\n---\n"));
 			})
