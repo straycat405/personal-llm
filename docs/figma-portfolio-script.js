@@ -245,7 +245,13 @@ const REPLACE_PREVIOUS = true;
 
 let removedCount = 0;
 if (REPLACE_PREVIOUS) {
-  const namePattern = /^\d\d · /;
+  // 정렬 스크립트가 통번호를 붙인 뒤("10 · Personal RAG · …")에도 인식해야 한다.
+  // 다른 덱(First Ticket)과 표지·클로징까지 지우지 않도록 그 이름들은 명시적으로 제외한다.
+  const namePattern = {
+    test: (name) => / · Personal RAG · /.test(name)
+      || (/^\d\d · /.test(name) && !/First Ticket|Portfolio/.test(name)
+          && !name.startsWith('00 · ') && !name.startsWith('99 · ')),
+  };
   const stale = figma.currentPage.children.filter(
     (n) => n.type === 'FRAME' && namePattern.test(n.name) && n.width === W && n.height === H
   );

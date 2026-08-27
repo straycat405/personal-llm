@@ -125,7 +125,8 @@ const created = [];
 // 재실행 시 이전 표지/클로징만 교체 (프로젝트 슬라이드는 건드리지 않는다)
 let removedCount = 0;
 {
-  const pat = /^(00 · COVER|99 · CLOSING)/;
+  // 통번호가 붙은 뒤("01 · Portfolio · COVER" / "17 · Portfolio · CLOSING")에도 인식한다.
+  const pat = /^(00 · COVER|99 · CLOSING)| · Portfolio · (Cover|Closing)/i;
   const stale = figma.currentPage.children.filter(
     (n) => n.type === 'FRAME' && pat.test(n.name) && n.width === W && n.height === H
   );

@@ -10,8 +10,8 @@
  * [결과] 기존 콘텐츠 오른쪽 빈 공간에 1920×1080 프레임 7장이 생성된다.
  *        원본 PDF 11장을 16:9에 맞게 7장으로 압축했다(세로가 짧아 페이지당 밀도를 낮춰야 한다).
  *
- * [BTLLM 스크립트와 공존] 슬라이드 이름을 "FT 01 · " 형식으로 붙여, 같은 페이지에 있는
- *   BTLLM 슬라이드("01 · " 형식)를 서로 지우지 않는다.
+ * [다른 덱과 공존] 슬라이드 이름을 "FT 01 · " 형식으로 붙여, 같은 페이지에 있는
+ *   Personal RAG 슬라이드("01 · " 형식)를 서로 지우지 않는다.
  *
  * [디자인 근거] 원본 박동진_portfolio_firstticket_001.pdf를 Ghostscript로 렌더링해
  *   픽셀에서 직접 추출한 색상값을 쓴다 — 눈대중 아님.
@@ -43,7 +43,7 @@ const fill = (c) => [{ type: 'SOLID', color: c }];
 
 /**
  * 글자 크기 스케일.
- * BTLLM 스크립트(1.15)보다 낮게 잡았다 — 이 포트폴리오는 트러블슈팅 4건에 지표·코드가
+ * Personal RAG 스크립트(1.15)보다 낮게 잡았다 — 이 포트폴리오는 트러블슈팅 4건에 지표·코드가
  * 함께 들어가 페이지당 밀도가 더 높기 때문이다.
  * 실행 후 "넘침 발생"이라고 나오면 1.0~1.05로 더 낮추고, 여백이 허전하면 1.15로 올린다.
  */
@@ -231,18 +231,20 @@ function NodeBox(w, title, sub, { bg = C.white, tc = C.navy, sc = C.gray } = {})
 
 // ── 슬라이드 프레임 생성 ──────────────────────────────────────
 const W = 1920, H = 1080, PAD_X = 120, PAD_TOP = 84;
-const PREFIX = 'FT'; // BTLLM 슬라이드("01 · ")와 이름이 겹치지 않게 한다
+const PREFIX = 'FT'; // Personal RAG 슬라이드("01 · ")와 이름이 겹치지 않게 한다
 
 /**
  * 재실행 시 이 스크립트가 만든 슬라이드만 지우고 새로 만든다.
  * 이름이 "FT 01 · " 형식이면서 정확히 1920×1080인 프레임만 대상이라,
- * BTLLM 슬라이드나 직접 만든 프레임은 건드리지 않는다.
+ * Personal RAG 슬라이드나 직접 만든 프레임은 건드리지 않는다.
  */
 const REPLACE_PREVIOUS = true;
 
 let removedCount = 0;
 if (REPLACE_PREVIOUS) {
-  const namePattern = /^FT \d\d · /;
+  // 정렬 스크립트가 통번호를 붙인 뒤("06 · First Ticket · …")에도 자기 슬라이드를 찾아야
+  // 재실행 시 중복 생성되지 않는다. 리네임 전/후 두 형태를 모두 인식한다.
+  const namePattern = /^(\d\d · )?FT \d\d · | · First Ticket · /;
   const stale = figma.currentPage.children.filter(
     (n) => n.type === 'FRAME' && namePattern.test(n.name) && n.width === W && n.height === H
   );
