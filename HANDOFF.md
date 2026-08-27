@@ -19,8 +19,8 @@
 
 1. ✅ **완료** — P0 보안 #1: Compose JWT 기본 키 제거와 시작 실패 검증 (아래 "P0 #1 완료 기록" 참고)
 2. ✅ **완료** — P0 보안 #2: Docker DB·Grafana·Prometheus·Loki 포트/기본 계정 잠금 (아래 "P0 #2 완료 기록" 참고)
-3. ⏭ **다음** — P0 보안 #3: `/api/v1/admin/etl/**` 권한 정책과 RAG 소유권 모델 결정·적용
-4. P0 보안 #4: ETL 및 LLM 크롤러 SSRF 공통 차단기 구현
+3. ✅ **완료** — P0 보안 #3: `/api/v1/admin/etl/**` 권한 정책과 RAG 소유권 모델 결정·적용 (아래 "P0 #3 완료 기록" 참고, 사용자가 "사용자별 소유 문서"로 결정)
+4. ⏭ **다음** — P0 보안 #4: ETL 및 LLM 크롤러 SSRF 공통 차단기 구현
 5. P1 성능/안정성: GPU 단일 작업 큐, ETL bounded executor, 사용자별 동시성·취소·과금 한도
 6. P1 안정성: SSE 스레드/진행정보 수명 관리, WebSocket 구독 취소
 7. P2 유지보수: 스트리밍 문자열 누적, 검색 쿼리·페이지네이션, DB 마이그레이션·운영 프로필
@@ -92,6 +92,56 @@
   뜨지 않는다(Postgres는 최초 initdb 시점 비밀번호만 반영) — 기존 로컬 볼륨 재사용 시 볼륨을
   삭제하거나 `ALTER USER`로 맞춰야 함. 이번 세션에서는 문서화만 하고 실제 볼륨 마이그레이션은
   하지 않음(사용자 로컬 데이터 삭제 판단은 사용자 몫).
+
+### P0 #3 완료 기록 (RAG 소유권 모델 — 사용자별 소유 문서로 결정)
+
+**사용자 결정**: "관리자 전용 공유 KB" vs "사용자별 소유 문서" 중 **사용자별 소유 문서**를 선택.
+
+**변경 파일**: [EtlPipelineService.java](backend/src/main/java/com/bigteam/btllm/rag/service/EtlPipelineService.java),
+[EtlController.java](backend/src/main/java/com/bigteam/btllm/rag/controller/EtlController.java),
+[EtlSourceService.java](backend/src/main/java/com/bigteam/btllm/rag/service/EtlSourceService.java),
+[LlmTools.java](backend/src/main/java/com/bigteam/btllm/chat/tools/LlmTools.java),
+[ChatWebSocketHandler.java](backend/src/main/java/com/bigteam/btllm/chat/controller/ChatWebSocketHandler.java),
+신규 테스트 `EtlSourceServiceTest`·`EtlControllerTest`, `LlmToolsTest`/`ReindexDocumentTask`/
+`ProviderComparisonExperiment`/`RagGenerationQualityExperiment` 시그니처 변경 대응.
+
+- **데이터 모델**: 색인 시점에 청크·요약 Document 전체 metadata에 `owner_id`(Long, 업로더의
+  JWT-검증된 userId)를 찍는다. `EtlPipelineService.pipelineWithProgress`에서 분할·요약이 끝난
+  최종 `toIndex` 목록에 한 번에 찍도록 했다 — 리더(PagePdfDocumentReader/TikaDocumentReader/
+  URL Document)마다 제각각 metadata를 세팅하는 지점을 건드리지 않아도 되게 하려는 선택.
+- **ingest(POST /url·/pdf·/file)**: `@AuthenticationPrincipal AuthUser`에서 얻은 id를 그대로
+  ownerId로 사용 — 클라이언트가 값을 지정할 수 없다(스푸핑 불가).
+- **list/delete(GET·DELETE /sources)**: `EtlSourceService`의 SQL에
+  `AND (metadata->>'owner_id')::bigint = ?` predicate 추가. 이 기능 이전에 색인된(owner_id
+  키 자체가 없는) 레거시 행은 캐스트 결과가 NULL이 되어 **아무에게도 보이지 않는다** — 누구
+  것인지 추측해서 배정하지 않고, 안전한 쪽(숨김)으로 처리했다. 재검색 재인덱싱하면 새 소유권이
+  붙는다.
+- **search(searchKnowledgeBase 챗 도구)**: `ToolContext`로 userId를 받아 `FilterExpressionBuilder
+  .eq("owner_id", ownerId)`를 벡터 검색에 건다. **userId가 없으면 검색 자체를 거부**한다
+  (fail-closed) — 필터 없는 검색으로 조용히 빠지면 전체 사용자 문서가 노출되므로 "실패 시 열림"
+  대신 "실패 시 닫힘"을 택했다. `ChatWebSocketHandler`가 이미 P0 #1에서 DB로 검증한 userId를
+  `toolContext`에 `conversationId`와 함께 실어 보낸다.
+- **의도적으로 그대로 둔 것**: `/{jobId}/progress` SSE는 permitAll 그대로 — EventSource가 커스텀
+  헤더를 못 보내 이 경로에서는 신원을 얻을 방법이 없다. progress 메시지는 파일명·본문 없이
+  퍼센트/상태 문구뿐이라 노출 시 피해가 작다고 판단, 신원 있는 SSE(서명 티켓 등)는 P1 #8로 남김.
+- **경로 이름(`/api/v1/admin/etl/**`)은 그대로 둠**: 더 이상 "admin 전용"이 아니라 사용자별
+  엔드포인트가 됐지만, 경로 변경은 프론트(`frontend/src/api/etl.ts`)까지 건드리는 별도 변경이라
+  이번 보안 수정에는 안 섞었다. 오해 소지가 있는 이름이라는 점만 남겨둔다(cosmetic, non-security).
+- **실험/유틸 코드 보정**: `ReindexDocumentTask`(REST 우회 재색인 유틸)와
+  `ProviderComparisonExperiment`/`RagGenerationQualityExperiment`(실 Ollama 골든셋 평가)는 JWT 없이
+  파이프라인을 직접 호출하므로 실제 인증 사용자가 없다 — 로컬 테스트 계정(`persisttest@test.com`,
+  `USER_ID=1L`, `ChatRoomControllerTest`와 동일 관례)으로 고정했다. **다른 계정으로 색인했다면
+  이 상수들을 맞춰야 실험이 통과한다.**
+- **검증**: `./gradlew compileJava compileTestJava test` 전체 통과(신규 4개 테스트 포함, CI와 동일
+  조건). `EtlSourceServiceTest`로 SQL bind parameter를, `EtlControllerTest`로 컨트롤러→서비스
+  ownerId 전달을, `LlmToolsTest`로 filterExpression 실제 적용과 fail-closed 케이스를 확인했다 —
+  실제 Ollama/pgVector가 필요한 end-to-end 교차 사용자 접근 테스트(계정 A로 올리고 계정 B로 조회
+  시도)는 하지 않았다, 필요하면 다음 세션에서 수동 검증 권장.
+- **미커밋 PDF 실험과의 충돌 처리**: `EtlPipelineService.java`·`ProviderComparisonExperiment.java`·
+  `RagGenerationQualityExperiment.java` 세 파일은 이미 PDF 표 구조 실험으로 미커밋 상태였다.
+  `git stash`로 PDF 실험 diff만 분리 → 클린 베이스에 P0 #3 변경만 커밋 → 실험 diff를 다시
+  pop해 병합(자동 병합, 충돌 없음)하는 방식으로 두 작업을 커밋 히스토리에서 분리했다. 병합 후
+  전체 컴파일 재확인 완료.
 
 ---
 
