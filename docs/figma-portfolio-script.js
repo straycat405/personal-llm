@@ -10,8 +10,9 @@
  * [결과] 기존 콘텐츠 오른쪽 빈 공간에 1920×1080 프레임 7장이 생성된다.
  *        기존 노드는 읽지도 수정하지도 않는다 — 순수 추가만 한다.
  *
- * [디자인 근거] 기존 First Ticket 포트폴리오 PDF에서 추출한 실제 색상값 사용:
- *   티얼 #0B8A7A / 네이비 #0A1D2C / 민트 #E8F5F2 / 카드 #F9FAFB / 본문 #6B7785
+ * [디자인 근거] 기존 Personal LLM 포트폴리오 PDF(박동진_portfolio_personal_llm_001.pdf)를
+ *   Ghostscript로 렌더링해 픽셀에서 직접 추출한 실제 색상값을 쓴다 — 눈대중 아님.
+ *   보라 #5B3FD9 / 인디고 #2D1B6E / 연보라 #EEF0FB / 앰버 #F59E0B / 다크 #1E1E2E
  */
 
 // ── 팔레트 ────────────────────────────────────────────────────
@@ -21,17 +22,18 @@ const hex = (h) => ({
   b: parseInt(h.slice(4, 6), 16) / 255,
 });
 const C = {
-  teal:   hex('0B8A7A'),
-  tealDk: hex('077668'),
-  navy:   hex('0A1D2C'),
-  ink:    hex('1A2332'),
-  gray:   hex('6B7785'),
-  mint:   hex('E8F5F2'),
-  card:   hex('F9FAFB'),
-  border: hex('E5E7EB'),
-  dark:   hex('1F2937'),
-  white:  hex('FFFFFF'),
-  amber:  hex('FFFBEB'),
+  accent:   hex('5B3FD9'), // 주 강조 — 섹션 라벨 · 지표 수치 · 포인트
+  accentDk: hex('3B2A9E'), // pill 텍스트처럼 작은 글씨에서 대비를 확보해야 할 때
+  navy:     hex('2D1B6E'), // 제목 (딥 인디고)
+  ink:      hex('1A2332'), // 본문 강조
+  gray:     hex('6B7684'), // 본문
+  soft:     hex('EEF0FB'), // 연보라 강조 배경 (pill · 노트)
+  card:     hex('F9FAFB'),
+  border:   hex('E5E7EB'),
+  dark:     hex('1E1E2E'), // 코드 블록 · 다크 노드
+  white:    hex('FFFFFF'),
+  amber:    hex('FEFBEA'), // 앰버 배경
+  amberInk: hex('D97706'), // 앰버 텍스트
 };
 const fill = (c) => [{ type: 'SOLID', color: c }];
 
@@ -117,17 +119,17 @@ function Spacer(h, w = 10) {
 
 /** 섹션 라벨 — 기존 포폴의 "03 · ARCHITECTURE" 스타일 */
 function SectionLabel(txt) {
-  return T(txt, { size: 15, style: S_BOLD, color: C.teal, ls: 1.2 });
+  return T(txt, { size: 15, style: S_BOLD, color: C.accent, ls: 1.2 });
 }
 
-/** 태그 pill — 민트 배경 + 티얼 텍스트 */
+/** 태그 pill — 연보라 배경 + 진한 보라 텍스트 */
 function Pill(txt) {
   const p = AL('HORIZONTAL', {
     itemSpacing: 0, paddingLeft: 18, paddingRight: 18, paddingTop: 9, paddingBottom: 9,
   });
   p.cornerRadius = 999;
-  p.fills = fill(C.mint);
-  p.appendChild(T(txt, { size: 15, style: S_SEMI, color: C.tealDk }));
+  p.fills = fill(C.soft);
+  p.appendChild(T(txt, { size: 15, style: S_SEMI, color: C.accentDk }));
   return p;
 }
 
@@ -145,12 +147,18 @@ function Card(width, { bg = C.card, pad = 28, gap = 12, radius = 12, stroke = tr
   return c;
 }
 
-/** 지표 박스 — 큰 수치 + 라벨 */
-function Metric(width, value, label, { color = C.teal, sub = null } = {}) {
+/**
+ * 지표 박스 — 큰 수치 + 라벨.
+ * [주의] 카드는 FIXED 폭이라, 수치 텍스트에 w를 주지 않으면 텍스트가 카드 밖으로
+ *   자라다가 clipsContent에 잘린다(실제로 7번 슬라이드에서 "76.2%"가 "76.2"로 잘렸다).
+ *   항상 내부 폭을 넘겨 줄바꿈되게 하고, 좁은 칸은 valueSize로 크기를 낮춘다.
+ */
+function Metric(width, value, label, { color = C.accent, sub = null, valueSize = 40 } = {}) {
   const m = Card(width, { bg: C.white, pad: 24, gap: 6 });
-  m.appendChild(T(value, { size: 40, style: S_BOLD, color }));
-  m.appendChild(T(label, { size: 15, style: S_REG, color: C.gray }));
-  if (sub) m.appendChild(T(sub, { size: 13, style: S_REG, color: C.gray }));
+  const iw = width - 48;
+  m.appendChild(T(value, { size: valueSize, style: S_BOLD, color, w: iw, lh: 1.25 }));
+  m.appendChild(T(label, { size: 15, style: S_REG, color: C.gray, w: iw }));
+  if (sub) m.appendChild(T(sub, { size: 13, style: S_REG, color: C.gray, w: iw }));
   return m;
 }
 
@@ -169,7 +177,7 @@ function CompareRow(width, label, before, after) {
   const ar = T('→', { size: 15, style: S_REG, color: C.gray, w: width * 0.08 });
   ar.textAlignHorizontal = 'CENTER';
   row.appendChild(ar);
-  const a = T(after, { size: 17, style: S_BOLD, color: C.teal, w: width * 0.28 });
+  const a = T(after, { size: 17, style: S_BOLD, color: C.accent, w: width * 0.28 });
   a.textAlignHorizontal = 'RIGHT';
   row.appendChild(a);
   return row;
@@ -180,7 +188,7 @@ function Bullet(width, txt, { color = C.ink, size = 16 } = {}) {
   const row = HStack(10);
   row.resize(width, row.height);
   row.layoutSizingHorizontal = 'FIXED';
-  const dot = T('·', { size, style: S_BOLD, color: C.teal });
+  const dot = T('·', { size, style: S_BOLD, color: C.accent });
   row.appendChild(dot);
   const body = T(txt, { size, style: S_REG, color, w: width - 20 });
   row.appendChild(body);
@@ -208,6 +216,24 @@ function NodeBox(w, title, sub, { bg = C.white, tc = C.navy, sc = C.gray } = {})
 
 // ── 슬라이드 프레임 생성 ──────────────────────────────────────
 const W = 1920, H = 1080, PAD_X = 120, PAD_TOP = 84;
+
+/**
+ * 재실행 시 이전에 이 스크립트가 만든 슬라이드를 지우고 새로 만든다.
+ * 끄면(false) 옆에 계속 새로 쌓인다.
+ *
+ * [삭제 조건] 이름이 "01 · " 형식이면서 크기가 정확히 1920×1080인 프레임만 지운다.
+ *   두 조건을 모두 걸어 사용자가 직접 만든 다른 프레임은 건드리지 않는다.
+ */
+const REPLACE_PREVIOUS = true;
+
+let removedCount = 0;
+if (REPLACE_PREVIOUS) {
+  const namePattern = /^\d\d · /;
+  const stale = figma.currentPage.children.filter(
+    (n) => n.type === 'FRAME' && namePattern.test(n.name) && n.width === W && n.height === H
+  );
+  for (const n of stale) { n.remove(); removedCount++; }
+}
 
 // 기존 콘텐츠와 겹치지 않게 오른쪽 빈 공간부터 시작
 let originX = 0;
@@ -266,12 +292,12 @@ const CW = W - PAD_X * 2; // 콘텐츠 폭 = 1680
   const col = Body(s, 0);
 
   col.appendChild(T('BACKEND ENGINEER · PORTFOLIO · 2026',
-    { size: 17, style: S_BOLD, color: C.teal, ls: 1.6 }));
+    { size: 17, style: S_BOLD, color: C.accent, ls: 1.6 }));
 
   col.appendChild(Spacer(60));
 
   const title = HStack(0);
-  title.appendChild(T('BTLLM', { size: 108, style: S_BOLD, color: C.teal, lh: 1.05 }));
+  title.appendChild(T('BTLLM', { size: 108, style: S_BOLD, color: C.accent, lh: 1.05 }));
   title.appendChild(T('.', { size: 108, style: S_BOLD, color: C.navy, lh: 1.05 }));
   col.appendChild(title);
 
@@ -334,26 +360,28 @@ const CW = W - PAD_X * 2; // 콘텐츠 폭 = 1680
   arch.counterAxisAlignItems = 'MIN';
 
   const cFront = Card(300, { bg: C.card, pad: 22, gap: 12 });
-  cFront.appendChild(T('Frontend', { size: 13, style: S_BOLD, color: C.teal, ls: 1 }));
+  cFront.appendChild(T('Frontend', { size: 13, style: S_BOLD, color: C.accent, ls: 1 }));
   cFront.appendChild(NodeBox(256, 'React + TypeScript', 'WebSocket 토큰 스트리밍'));
   cFront.appendChild(T('REST · 인증 / 문서 / 이력', { size: 13, style: S_REG, color: C.gray }));
   arch.appendChild(cFront);
 
   const cBack = Card(700, { bg: C.card, pad: 22, gap: 10 });
-  cBack.appendChild(T('Spring Boot 3.5 + Spring AI 1.1', { size: 13, style: S_BOLD, color: C.teal, ls: 1 }));
+  cBack.appendChild(T('Spring Boot 3.5 + Spring AI 1.1', { size: 13, style: S_BOLD, color: C.accent, ls: 1 }));
   const r1 = HStack(10);
   r1.appendChild(NodeBox(320, 'ChatClientFactory', 'Advisor 체인 · provider 라우팅'));
   r1.appendChild(NodeBox(320, 'LlmTools', 'Tool Calling 기반 조건부 검색'));
   cBack.appendChild(r1);
   const r2 = HStack(10);
-  r2.appendChild(NodeBox(320, 'OllamaGenerationQueue', 'GPU 1슬롯 admission control', { bg: C.mint }));
-  r2.appendChild(NodeBox(320, 'EtlPipelineService', 'Reader → Split → 임베딩', { bg: C.mint }));
+  r2.appendChild(NodeBox(320, 'OllamaGenerationQueue', 'GPU 1슬롯 admission control', { bg: C.soft }));
+  r2.appendChild(NodeBox(320, 'EtlPipelineService', 'Reader → Split → 임베딩', { bg: C.soft }));
   cBack.appendChild(r2);
-  cBack.appendChild(NodeBox(656, 'SafeUrlFetcher', 'SSRF 가드 — scheme/포트/DNS 해석 IP 검증', { bg: C.amber }));
+  // 앰버 강조 — 참조 포폴이 ETL 경로를 앰버로 구분한 것과 같은 용법
+  cBack.appendChild(NodeBox(656, 'SafeUrlFetcher', 'SSRF 가드 — scheme/포트/DNS 해석 IP 검증',
+    { bg: C.amber, tc: C.amberInk, sc: C.amberInk }));
   arch.appendChild(cBack);
 
   const cInfra = Card(540, { bg: C.card, pad: 22, gap: 10 });
-  cInfra.appendChild(T('Local Runtime', { size: 13, style: S_BOLD, color: C.teal, ls: 1 }));
+  cInfra.appendChild(T('Local Runtime', { size: 13, style: S_BOLD, color: C.accent, ls: 1 }));
   cInfra.appendChild(NodeBox(496, 'Ollama', 'qwen3:8b 생성 + bge-m3 임베딩', { bg: C.dark, tc: C.white, sc: C.border }));
   cInfra.appendChild(NodeBox(496, 'PostgreSQL + pgvector', '문서 청크 · 임베딩 · 대화 이력', { bg: C.dark, tc: C.white, sc: C.border }));
   arch.appendChild(cInfra);
@@ -361,9 +389,9 @@ const CW = W - PAD_X * 2; // 콘텐츠 폭 = 1680
   col.appendChild(arch);
 
   // 제약 배너
-  const banner = Card(CW, { bg: C.mint, pad: 22, gap: 6, stroke: false });
+  const banner = Card(CW, { bg: C.soft, pad: 22, gap: 6, stroke: false });
   banner.appendChild(T('실행 제약 — 이 프로젝트 모든 수치의 전제',
-    { size: 15, style: S_BOLD, color: C.tealDk, ls: 0.5 }));
+    { size: 15, style: S_BOLD, color: C.accentDk, ls: 0.5 }));
   banner.appendChild(T(
     'RTX 4060 Ti 8GB · qwen3:8b(5.6GB) + bge-m3(0.7GB) → 여유 약 1.7GB. 이 한 줄이 청크 크기·재정렬 방식·GPU admission control까지 대부분의 설계를 규정한다.',
     { size: 17, style: S_REG, color: C.ink, w: CW - 44 }));
@@ -402,8 +430,8 @@ const CW = W - PAD_X * 2; // 콘텐츠 폭 = 1680
     row.counterAxisAlignItems = 'CENTER';
     const tag = AL('HORIZONTAL', {
       paddingLeft: 12, paddingRight: 12, paddingTop: 6, paddingBottom: 6 });
-    tag.fills = fill(C.mint); tag.cornerRadius = 6;
-    tag.appendChild(T(n, { size: 13, style: S_SEMI, color: C.tealDk }));
+    tag.fills = fill(C.soft); tag.cornerRadius = 6;
+    tag.appendChild(T(n, { size: 13, style: S_SEMI, color: C.accentDk }));
     row.appendChild(tag);
     row.appendChild(T(d, { size: 15, style: S_REG, color: C.ink, w: 400 }));
     left.appendChild(row);
@@ -432,12 +460,12 @@ const CW = W - PAD_X * 2; // 콘텐츠 폭 = 1680
   right.appendChild(divider);
 
   right.appendChild(T('청크 1500 → 800 (동일 문서 · 동일 골든셋)',
-    { size: 14, style: S_BOLD, color: C.teal, ls: 0.5 }));
+    { size: 14, style: S_BOLD, color: C.accent, ls: 0.5 }));
   right.appendChild(CompareRow(rw, '문항 통과율', '0.0%', '50.0%'));
   right.appendChild(CompareRow(rw, '필수 사실 포함률', '38.1%', '76.2%'));
   right.appendChild(CompareRow(rw, '평균 응답시간', '65.8s', '50.6s'));
 
-  const note = Card(rw, { bg: C.mint, pad: 18, gap: 0, stroke: false });
+  const note = Card(rw, { bg: C.soft, pad: 18, gap: 0, stroke: false });
   note.appendChild(T(
     '76.2%는 gpt-4o-mini의 사실 포함률과 동일한 값이다 — "모델 체급 문제"로 분류했던 실패 상당수가 실제로는 컨텍스트 초과였다.',
     { size: 15, style: S_REG, color: C.ink, w: rw - 36 }));
@@ -480,7 +508,7 @@ const CW = W - PAD_X * 2; // 콘텐츠 폭 = 1680
   a.appendChild(T(
     '원인 — 로컬 프록시로 백엔드→Ollama 요청 원문을 가로채 확인했다. YAML에 정수 -1을 썼지만 Spring AI의 keepAlive 필드가 String이라 "-1"로 직렬화됐고, Ollama의 Go time.ParseDuration이 단위 없는 값을 400으로 거부하고 있었다.',
     { size: 16, style: S_REG, color: C.gray, w: iw }));
-  a.appendChild(T('해결 — 단위 명시 -1s', { size: 16, style: S_SEMI, color: C.teal, w: iw }));
+  a.appendChild(T('해결 — 단위 명시 -1s', { size: 16, style: S_SEMI, color: C.accent, w: iw }));
 
   const mA = HStack(12);
   mA.appendChild(Metric((iw - 12) / 2, '100% → 0%', 'k6 에러율'));
@@ -494,11 +522,11 @@ const CW = W - PAD_X * 2; // 콘텐츠 폭 = 1680
   b.appendChild(T('증상 — 100~450자 답변에 평균 88.9s, p95 188.6s. 약 75초가 설명되지 않았다.',
     { size: 16, style: S_SEMI, color: C.ink, w: iw }));
 
-  b.appendChild(T('두 번 틀렸다', { size: 14, style: S_BOLD, color: C.teal, ls: 0.5 }));
+  b.appendChild(T('두 번 틀렸다', { size: 14, style: S_BOLD, color: C.accent, ls: 0.5 }));
   b.appendChild(Bullet(iw, '"출력이 길다" → num_predict 512 제한. 지연은 8.4s만 줄고 출처 표시율이 100%→37.5%로 붕괴. 되돌림', { size: 15, color: C.gray }));
   b.appendChild(Bullet(iw, 'VRAM 압박 의심 → VRAM 93%에서 오히려 더 빨랐다(36.1 tok/s)', { size: 15, color: C.gray }));
 
-  b.appendChild(T('진단 — 동일 질문, thinking 모드만 교체', { size: 14, style: S_BOLD, color: C.teal, ls: 0.5 }));
+  b.appendChild(T('진단 — 동일 질문, thinking 모드만 교체', { size: 14, style: S_BOLD, color: C.accent, ls: 0.5 }));
   b.appendChild(CompareRow(iw, 'think=true / think=false', '257토큰 35.1s', '50토큰 6.0s'));
   b.appendChild(T(
     '보이지 않는 <think> 토큰이 시간을 다 쓰고 있었다. application.yaml의 think:false는 설정돼 있었지만, ChatClientFactory가 defaultOptions를 통째로 지정하면서 실제 요청에 실리지 않았다.',
@@ -616,7 +644,7 @@ const CW = W - PAD_X * 2; // 콘텐츠 폭 = 1680
     head.counterAxisAlignItems = 'CENTER';
     const badge = AL('HORIZONTAL', {
       paddingLeft: 10, paddingRight: 10, paddingTop: 4, paddingBottom: 4 });
-    badge.fills = fill(C.teal); badge.cornerRadius = 6;
+    badge.fills = fill(C.accent); badge.cornerRadius = 6;
     badge.appendChild(T(no, { size: 13, style: S_BOLD, color: C.white }));
     head.appendChild(badge);
     head.appendChild(T(title, { size: 18, style: S_BOLD, color: C.navy }));
@@ -624,7 +652,7 @@ const CW = W - PAD_X * 2; // 콘텐츠 폭 = 1680
 
     const iw2 = gw - 48;
     c.appendChild(T(prob, { size: 15, style: S_REG, color: C.gray, w: iw2 }));
-    const fixBox = Card(iw2, { bg: C.mint, pad: 14, gap: 0, stroke: false, radius: 8 });
+    const fixBox = Card(iw2, { bg: C.soft, pad: 14, gap: 0, stroke: false, radius: 8 });
     fixBox.appendChild(T(fix, { size: 14, style: S_REG, color: C.ink, w: iw2 - 28 }));
     c.appendChild(fixBox);
     grid.appendChild(c);
@@ -658,7 +686,8 @@ const CW = W - PAD_X * 2; // 콘텐츠 폭 = 1680
    ['37.2s → 1.2s', '콜드스타트'],
    ['88.9s → 33.0s', '평균 응답 지연'],
    ['0% → 100%', 'Tool 호출률']
-  ].forEach(([v, l]) => metrics.appendChild(Metric(mw, v, l)));
+  // 한 줄에 5칸이라 칸당 폭이 좁다 — 수치 크기를 낮춰 "38.1% → 76.2%" 같은 긴 값도 들어가게 한다
+  ].forEach(([v, l]) => metrics.appendChild(Metric(mw, v, l, { valueSize: 27 })));
   col.appendChild(metrics);
 
   const two = HStack(28);
@@ -678,10 +707,10 @@ const CW = W - PAD_X * 2; // 콘텐츠 폭 = 1680
   left.appendChild(T(
     'PDF 표 구조가 평탄화되며 트랙 레이블과 값의 연결이 끊기는 문제는 미해결이다. 로컬·상용 두 모델이 12회 시도 전부 실패했다 — 근거에 없는 사실은 어떤 모델도 만들어낼 수 없다.',
     { size: 16, style: S_REG, color: C.gray, w: iw }));
-  const q = Card(iw, { bg: C.mint, pad: 20, gap: 0, stroke: false });
+  const q = Card(iw, { bg: C.soft, pad: 20, gap: 0, stroke: false });
   q.appendChild(T(
     '"근거가 있는데 못 쓴다"와 "근거가 없다" 사이에는 "근거는 있는데 의미 연결이 파괴된 채로 있다"는 제3의 상태가 존재한다.',
-    { size: 16, style: S_SEMI, color: C.tealDk, w: iw - 40 }));
+    { size: 16, style: S_SEMI, color: C.accentDk, w: iw - 40 }));
   left.appendChild(q);
   left.appendChild(T('다음 과제 — 표 구조를 보존하는 파서 도입',
     { size: 16, style: S_SEMI, color: C.ink, w: iw }));
@@ -709,6 +738,6 @@ for (const f of created) {
   }
 }
 
-`✅ 슬라이드 ${created.length}장 생성 완료 (1920×1080)
+`✅ 슬라이드 ${created.length}장 생성 완료 (1920×1080)${removedCount ? ` · 이전 ${removedCount}장 교체` : ''}
 폰트: ${FAMILY} (bold=${S_BOLD} / semi=${S_SEMI} / regular=${S_REG})
 ${overflow.length ? '넘침 발생 — 아래 슬라이드는 폰트 크기나 문구를 줄여야 한다:\n' + overflow.join('\n') : '넘침 없음 — 모든 슬라이드가 1080 안에 들어감'}`
