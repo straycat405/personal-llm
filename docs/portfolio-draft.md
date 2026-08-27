@@ -6,7 +6,10 @@
 > 이 초안은 그 구조에 BTLLM 내용을 채운 **텍스트 초안**이다 — 실제 제작(레이아웃·다이어그램)은
 > 이 내용이 확정된 뒤에 한다.
 >
-> **[ ] 표시는 사용자가 채워야 할 자리**다 — 기간·인원·연락처는 세션 기록만으로는 알 수 없다.
+> 기간·인원·연락처는 채워 넣었다. 남은 `[ ]`는 **지원 직무에 맞춰 매번 달라지는 마무리 인사**
+> 한 줄뿐이다 — 지원처가 정해질 때 채운다.
+>
+> 이 초안을 1920×1080 슬라이드로 만드는 스크립트는 [`figma-portfolio-script.js`](figma-portfolio-script.js).
 
 ---
 
@@ -16,7 +19,7 @@
 
 `Spring Boot 3.5` `Spring AI 1.1` `pgVector` `Ollama` `React` `WebSocket` `Docker`
 
-이메일: `[ ]` · GitHub: `github.com/straycat405` · Blog: `[ ]`
+이메일: `straycat405@gmail.com` · GitHub: `github.com/straycat405` · Blog: `velog.io/@straycat405/posts`
 
 ---
 
@@ -51,9 +54,9 @@
 
 | | |
 |---|---|
-| 기간 | `[ ]` |
-| 인원 | `[ ]` (개인 프로젝트) |
-| 리포지토리 | `[ ]` |
+| 기간 | 2026.02 ~ 2026.03 |
+| 인원 | 1인 개발 (개인 프로젝트) |
+| 리포지토리 | github.com/straycat405/personal-llm |
 | 핵심 스택 | Spring Boot 3.5 · Spring AI 1.1 · pgVector · Ollama(qwen3:8b, bge-m3) · React · WebSocket |
 
 ### 기여 요약
@@ -322,4 +325,4 @@ GPU를 물리적으로 공유하지 않기 때문이다.
 
 ---
 
-`[ ]` 이메일 · `[ ]` GitHub · `[ ]` Blog
+straycat405@gmail.com · github.com/straycat405 · velog.io/@straycat405/posts

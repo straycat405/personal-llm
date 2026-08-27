@@ -349,6 +349,23 @@ const CW = W - PAD_X * 2; // 콘텐츠 폭 = 1680
 
   col.appendChild(SectionLabel('01 · OVERVIEW'));
   col.appendChild(T('밖으로 나가면 안 되는 문서를, 개인 PC 안에서', { size: 40, style: S_BOLD, color: C.navy }));
+
+  // 프로젝트 메타 — 기간 · 인원 · 저장소를 한 줄로
+  const meta = HStack(14);
+  meta.counterAxisAlignItems = 'CENTER';
+  [['기간', '2026.02 ~ 2026.03'],
+   ['인원', '1인 개발 (개인 프로젝트)'],
+   ['저장소', 'github.com/straycat405/personal-llm']
+  ].forEach(([k, v], i) => {
+    if (i) meta.appendChild(T('·', { size: 15, style: S_REG, color: C.gray }));
+    const item = HStack(7);
+    item.counterAxisAlignItems = 'CENTER';
+    item.appendChild(T(k, { size: 14, style: S_BOLD, color: C.accent }));
+    item.appendChild(T(v, { size: 15, style: S_REG, color: C.gray }));
+    meta.appendChild(item);
+  });
+  col.appendChild(meta);
+
   col.appendChild(T(
     '상용 LLM API는 품질이 좋지만 문서 본문이 외부로 전송되고 사용량만큼 과금된다. 정부 공고문·계약서·사내 매뉴얼처럼 밖으로 나가면 안 되는 문서를 다루려면 로컬에서 끝나는 파이프라인이 필요하다. "로컬 모델은 느리고 부정확하다"는 전제를 직접 재고 확인하는 것이 이 프로젝트의 출발점이다.',
     { size: 18, style: S_REG, color: C.gray, w: CW * 0.72 }));
