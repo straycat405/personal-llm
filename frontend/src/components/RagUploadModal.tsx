@@ -10,6 +10,7 @@ export default function RagUploadModal({ onClose }: { onClose: () => void }) {
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle')
   const [message, setMessage] = useState('')
   const [progress, setProgress] = useState(0)
+  const [isDragging, setIsDragging] = useState(false)  // [신규] 드래그 앤 드롭 하이라이트
   const fileInputRef = useRef<HTMLInputElement>(null)
   // [설계] EventSource ref: 모달 닫힘 또는 탭 전환 시 SSE 연결 명시적 종료
   const esRef = useRef<EventSource | null>(null)
@@ -61,18 +62,43 @@ export default function RagUploadModal({ onClose }: { onClose: () => void }) {
     }
   }
 
-  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
+  // [신규] 파일 선택(input)·드래그앤드롭 두 경로가 공유하는 업로드 처리
+  const uploadFile = async (file: File) => {
     try {
       const res = await ingestFile(file)
       startProgress(res.data.data.jobId)
     } catch {
       setStatus('error')
       setMessage('업로드 실패')
-    } finally {
-      e.target.value = ''
     }
+  }
+
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    await uploadFile(file)
+    e.target.value = ''
+  }
+
+  // [신규] 드래그 앤 드롭 — 다른 프로그램들처럼 드롭존에 파일을 바로 끌어다 놓을 수 있게 한다.
+  //   드래그 중인 대상이 파일이 아닐 수도 있어(텍스트 선택 등) dataTransfer.files만 사용한다.
+  const handleDragOver = (e: React.DragEvent<HTMLButtonElement>) => {
+    e.preventDefault()  // 브라우저 기본 동작(새 탭으로 파일 열기)을 막아야 drop이 발생한다
+    if (status === 'loading') return
+    setIsDragging(true)
+  }
+
+  const handleDragLeave = (e: React.DragEvent<HTMLButtonElement>) => {
+    e.preventDefault()
+    setIsDragging(false)
+  }
+
+  const handleDrop = (e: React.DragEvent<HTMLButtonElement>) => {
+    e.preventDefault()
+    setIsDragging(false)
+    if (status === 'loading') return
+    const file = e.dataTransfer.files?.[0]  // 여러 개 드롭해도 첫 파일만 처리(input과 동일 동작)
+    if (file) void uploadFile(file)
   }
 
   const handleClose = () => {
@@ -110,6 +136,10 @@ export default function RagUploadModal({ onClose }: { onClose: () => void }) {
       <div
         className="w-full max-w-md bg-gray-900 rounded-xl border border-gray-700 p-6 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
+        // [설계] 드롭존 바깥(모달 안 다른 영역)에 실수로 놓아도 브라우저가 파일을 새로 열며
+        //   페이지를 이탈하지 않도록 막는다 — 실제 업로드는 드롭존의 onDrop에서만 처리한다.
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => e.preventDefault()}
       >
         {/* 헤더 */}
         <div className="flex items-center justify-between mb-5">
@@ -165,12 +195,23 @@ export default function RagUploadModal({ onClose }: { onClose: () => void }) {
           <div>
             <button
               onClick={() => fileInputRef.current?.click()}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
               disabled={status === 'loading'}
-              className="w-full border-2 border-dashed border-gray-700 hover:border-violet-500
-                         disabled:opacity-50 rounded-xl p-8 text-center transition cursor-pointer"
+              className={`w-full border-2 border-dashed rounded-xl p-8 text-center
+                         transition cursor-pointer disabled:opacity-50 ${
+                isDragging
+                  ? 'border-violet-500 bg-violet-500/10'
+                  : 'border-gray-700 hover:border-violet-500'
+              }`}
             >
               <p className="text-gray-400 text-sm">
-                {status === 'loading' ? '인덱싱 중...' : '파일 클릭하여 선택'}
+                {status === 'loading'
+                  ? '인덱싱 중...'
+                  : isDragging
+                    ? '여기에 놓으세요'
+                    : '파일을 끌어다 놓거나 클릭하여 선택'}
               </p>
               {/* [설계] Tika 지원 포맷 안내 — 사용자가 업로드 가능 형식 예측 가능하게 */}
               <p className="text-gray-600 text-xs mt-1">PDF · DOCX · XLSX · PPTX · TXT 지원</p>
