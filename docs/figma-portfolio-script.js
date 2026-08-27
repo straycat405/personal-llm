@@ -1,5 +1,5 @@
 /**
- * BTLLM 포트폴리오 — Figma 1920×1080 슬라이드 자동 생성 스크립트
+ * Personal RAG 포트폴리오 — Figma 1920×1080 슬라이드 자동 생성 스크립트
  *
  * [실행 방법]
  *   1. Figma에서 "포폴-20260827" 파일 열기
@@ -293,12 +293,12 @@ function Footer(slide, idx, total) {
   line.fills = fill(C.border);
   slide.appendChild(line);
 
-  const t = T(`BTLLM — 박동진 · ${idx} / ${total}`, { size: 14, style: S_REG, color: C.gray });
+  const t = T(`Personal RAG — 박동진 · ${idx} / ${total}`, { size: 14, style: S_REG, color: C.gray });
   t.x = PAD_X; t.y = H - 72;
   slide.appendChild(t);
 }
 
-const TOTAL = 7;
+const TOTAL = 8;
 const CW = W - PAD_X * 2; // 콘텐츠 폭 = 1680
 
 // ══════════════════════════════════════════════════════════════
@@ -314,8 +314,8 @@ const CW = W - PAD_X * 2; // 콘텐츠 폭 = 1680
   col.appendChild(Spacer(60));
 
   const title = HStack(0);
-  title.appendChild(T('BTLLM', { size: 108, style: S_BOLD, color: C.accent, lh: 1.05 }));
-  title.appendChild(T('.', { size: 108, style: S_BOLD, color: C.navy, lh: 1.05 }));
+  title.appendChild(T('Personal RAG', { size: 88, style: S_BOLD, color: C.accent, lh: 1.05 }));
+  title.appendChild(T('.', { size: 88, style: S_BOLD, color: C.navy, lh: 1.05 }));
   col.appendChild(title);
 
   col.appendChild(Spacer(28));
@@ -648,13 +648,88 @@ const CW = W - PAD_X * 2; // 콘텐츠 폭 = 1680
 }
 
 // ══════════════════════════════════════════════════════════════
-// S6 — SECURITY
+// S6 — TROUBLESHOOTING 3 : 인덱스와 실행계획
 // ══════════════════════════════════════════════════════════════
 {
-  const s = Slide(6, 'SECURITY');
+  const s = Slide(6, 'TROUBLESHOOTING · 인덱스');
   const col = Body(s, 22);
 
-  col.appendChild(SectionLabel('04 · SECURITY'));
+  col.appendChild(SectionLabel('03 · TROUBLESHOOTING'));
+  col.appendChild(T('인덱스를 만든 것과, 그것이 쓰이는 것은 다른 문제였다',
+    { size: 40, style: S_BOLD, color: C.navy }));
+  col.appendChild(T('대화 이력 20만 행 기준 · PostgreSQL EXPLAIN (ANALYZE, BUFFERS)',
+    { size: 18, style: S_REG, color: C.gray }));
+
+  const metrics = HStack(16);
+  const mw = (CW - 32) / 3;
+  [['11.94ms → 0.21ms', '방 이력 조회', 'buffers 2,826 → 8'],
+   ['16.02ms → 0.05ms', '키워드 검색 (흔한 키워드)', 'buffers 2,820 → 8'],
+   ['57.01ms → 0.03ms', '키워드 검색 (매칭 0건 · 전역)', 'buffers 2,844 → 15']
+  ].forEach(([v, l, sub]) => metrics.appendChild(Metric(mw, v, l, { sub, valueSize: 26 })));
+  col.appendChild(equalize(metrics));
+
+  const two = HStack(28);
+  two.counterAxisAlignItems = 'MIN';
+  const cw = (CW - 28) / 2, iw = cw - 60;
+
+  // 좌 — 진단과 조치
+  const a = Card(cw, { bg: C.card, pad: 30, gap: 12 });
+  a.appendChild(T('진단 — 문제가 세 겹으로 겹쳐 있었다', { size: 21, style: S_BOLD, color: C.navy }));
+  a.appendChild(Bullet(iw, 'chat_room_id는 FK지만 PostgreSQL은 FK에 인덱스를 자동 생성하지 않는다 — 방 하나를 읽으려 테이블 전체를 스캔', { size: 15, color: C.gray }));
+  a.appendChild(Bullet(iw, "LOWER(content) LIKE '%키워드%' — 앞 와일드카드는 B-tree가 시작 지점을 특정할 수 없다", { size: 15, color: C.gray }));
+  a.appendChild(Bullet(iw, '상한이 Java에 있었다 — 매칭 전체를 받아 스트림에서 .limit(5), 버릴 행까지 DB가 정렬해 전송', { size: 15, color: C.gray }));
+
+  const codeBefore = Card(iw, { bg: C.dark, pad: 18, gap: 5, stroke: false, radius: 8 });
+  codeBefore.appendChild(T('Seq Scan on chat_histories  (rows=1000)', { size: 14, style: S_REG, color: C.white, w: iw - 36 }));
+  codeBefore.appendChild(T('  Rows Removed by Filter: 199036', { size: 14, style: S_REG, color: hex('FCA5A5'), w: iw - 36 }));
+  codeBefore.appendChild(T('  Execution Time: 11.939 ms', { size: 14, style: S_REG, color: hex('FCA5A5'), w: iw - 36 }));
+  a.appendChild(codeBefore);
+  a.appendChild(T('1,000행을 얻으려고 20만 행을 읽고 있었다.',
+    { size: 16, style: S_SEMI, color: C.ink, w: iw }));
+
+  a.appendChild(T('조치', { size: 15, style: S_BOLD, color: C.accent, ls: 0.5 }));
+  a.appendChild(Bullet(iw, 'FK 단독이 아니라 (chat_room_id, created_at, id) 복합 인덱스 — 쿼리가 항상 그 순서로 정렬하므로 Sort 노드가 사라지고 LIMIT이 조기 종료된다', { size: 15, color: C.gray }));
+  a.appendChild(Bullet(iw, '상한을 Pageable로 SQL에 내림 — 겉보기 동작이 같아 회귀를 놓치기 쉬워, Pageable이 실제로 전달되는지 테스트로 고정', { size: 15, color: C.gray }));
+  two.appendChild(a);
+
+  // 우 — 예상이 빗나간 지점
+  const b = Card(cw, { bg: C.card, pad: 30, gap: 12 });
+  b.appendChild(T('예상이 빗나간 지점', { size: 21, style: S_BOLD, color: C.navy }));
+  b.appendChild(T('LIKE 검색을 태우려고 trigram GIN 인덱스를 만들었는데, 실행계획을 보니 플래너가 그 인덱스를 쓰지 않았다.',
+    { size: 16, style: S_REG, color: C.gray, w: iw }));
+
+  const codeAfter = Card(iw, { bg: C.dark, pad: 18, gap: 5, stroke: false, radius: 8 });
+  codeAfter.appendChild(T('Index Scan using ix_..._room_created', { size: 14, style: S_REG, color: hex('86EFAC'), w: iw - 36 }));
+  codeAfter.appendChild(T('  Filter: (lower(content) ~~ \'%임베딩%\')', { size: 14, style: S_REG, color: C.white, w: iw - 36 }));
+  codeAfter.appendChild(T('  Rows Removed by Filter: 23   ← 28행에서 종료', { size: 14, style: S_REG, color: hex('FDE68A'), w: iw - 36 }));
+  b.appendChild(codeAfter);
+
+  b.appendChild(T('정렬 순서대로 읽다 5건을 채우고 멈추는 쪽이 실제로 더 쌌다 — 플래너의 선택이 옳았다. 여기서 넘어갔으면 "trigram 덕분에 빨라졌다"고 틀리게 쓸 뻔했다.',
+    { size: 16, style: S_REG, color: C.gray, w: iw }));
+
+  b.appendChild(T('그러면 지워야 하나 — 조건을 바꿔 다시 측정', { size: 15, style: S_BOLD, color: C.accent, ls: 0.5 }));
+  b.appendChild(CompareRow(iw, '방 필터 + 흔한 키워드', '0.05ms', '미사용'));
+  b.appendChild(CompareRow(iw, '전역 검색 · 매칭 0건', '57.01ms', '0.03ms'));
+
+  const insight = Card(iw, { bg: C.soft, pad: 18, gap: 0, stroke: false });
+  insight.appendChild(T(
+    '결정적 구간은 "찾는 것이 없을 때"였다. 복합 인덱스만으로는 방 전체를 훑고 빈손으로 끝나지만, trigram은 후보 없음을 즉시 판정한다. 둘은 대체재가 아니라 서로 다른 구간을 맡는 보완재이고, 플래너가 상황에 따라 갈아탄다.',
+    { size: 15, style: S_REG, color: C.ink, w: iw - 36 }));
+  b.appendChild(insight);
+  two.appendChild(b);
+
+  col.appendChild(equalize(two));
+  Footer(s, 6, TOTAL);
+}
+
+// ══════════════════════════════════════════════════════════════
+// S7 — SECURITY
+// ══════════════════════════════════════════════════════════════
+{
+  const s = Slide(7, 'SECURITY');
+  const col = Body(s, 22);
+
+  col.appendChild(SectionLabel('05 · SECURITY'));
   col.appendChild(T('"로컬 앱"이라는 전제가 틀렸다', { size: 40, style: S_BOLD, color: C.navy }));
   col.appendChild(T(
     '개인 PC용 앱이라는 인상과 달리, 공개 회원가입과 JWT 인증이 있는 다중 사용자 웹 서비스였다. 정적 스캔(Critical 1 · High 5 · Medium 2) 이후 기능 개발을 멈추고 외부 노출 전 필수 항목부터 고쳤다.',
@@ -703,17 +778,17 @@ const CW = W - PAD_X * 2; // 콘텐츠 폭 = 1680
     { size: 16, style: S_REG, color: C.gray, w: CW - 48 }));
   col.appendChild(honest);
 
-  Footer(s, 6, TOTAL);
+  Footer(s, 8, TOTAL);
 }
 
 // ══════════════════════════════════════════════════════════════
-// S7 — PERFORMANCE + RETROSPECTIVE
+// S8 — PERFORMANCE + RETROSPECTIVE
 // ══════════════════════════════════════════════════════════════
 {
-  const s = Slide(7, 'PERFORMANCE · RETROSPECTIVE');
+  const s = Slide(8, 'PERFORMANCE · RETROSPECTIVE');
   const col = Body(s, 22);
 
-  col.appendChild(SectionLabel('05 · PERFORMANCE'));
+  col.appendChild(SectionLabel('06 · PERFORMANCE'));
   col.appendChild(T('측정 없이는 개선을 주장할 수 없다', { size: 40, style: S_BOLD, color: C.navy }));
 
   const metrics = HStack(16);

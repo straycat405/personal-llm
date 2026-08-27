@@ -2,19 +2,19 @@
  * 포트폴리오 통합 표지 + 클로징 — Figma 1920×1080 슬라이드 생성 스크립트
  *
  * [왜 필요한가]
- *   BTLLM·First Ticket 두 덱을 이어 붙이면 1페이지가 곧바로 프로젝트 표지라,
+ *   Personal RAG·First Ticket 두 덱을 이어 붙이면 1페이지가 곧바로 프로젝트 표지라,
  *   "지원자가 누구인가"가 8페이지에 가서야 처음 나온다. 채용담당자가 신입 이력서 1건에
  *   쓰는 시간이 3~5초라는 점을 감안하면 그 앞에 정체성을 세우는 장이 필요하다.
  *
  * [실행 방법]
- *   1. Figma에서 대상 파일 열기 (BTLLM·First Ticket 슬라이드가 이미 있는 페이지 권장)
+ *   1. Figma에서 대상 파일 열기 (Personal RAG·First Ticket 슬라이드가 이미 있는 페이지 권장)
  *   2. 우클릭 → Plugins → "Scripter" 실행
  *   3. 이 파일 내용 전체를 붙여넣고 실행(▶ 또는 Cmd/Ctrl+Enter)
  *
  * [배치] 기존 1920×1080 슬라이드를 찾아 표지는 그 왼쪽, 클로징은 오른쪽에 놓는다.
  *   슬라이드가 하나도 없으면 원점 근처에 나란히 만든다.
  *
- * [이름] "00 · COVER" / "99 · CLOSING" — 앞뒤로 정렬되고, BTLLM("01 · ")·
+ * [이름] "00 · COVER" / "99 · CLOSING" — 앞뒤로 정렬되고, Personal RAG("01 · ")·
  *   First Ticket("FT 01 · ") 스크립트의 교체 대상에도 걸리지 않는다.
  */
 
@@ -23,7 +23,7 @@
 const CLOSING_LINE = '측정할 수 있는 것부터 고치고, 고친 것을 수치로 증명하는 개발자가 되겠습니다.';
 
 // ── 팔레트 ────────────────────────────────────────────────────
-// 표지는 두 프로젝트(보라 BTLLM / 티얼 First Ticket) 어느 쪽에도 치우치지 않도록
+// 표지는 두 프로젝트(보라 Personal RAG / 티얼 First Ticket) 어느 쪽에도 치우치지 않도록
 // 다크 네이비를 바탕으로 두고, 두 프로젝트 색을 액센트로 함께 쓴다.
 const hex = (h) => ({
   r: parseInt(h.slice(0, 2), 16) / 255,
@@ -36,7 +36,7 @@ const C = {
   line:    hex('2A3548'),
   white:   hex('FFFFFF'),
   mute:    hex('9BA6B8'), // 다크 배경 위 보조 텍스트
-  purple:  hex('7C5CFF'), // BTLLM 액센트 (다크 배경에서 읽히도록 원본보다 밝게)
+  purple:  hex('7C5CFF'), // Personal RAG 액센트 (다크 배경에서 읽히도록 원본보다 밝게)
   teal:    hex('19B99F'), // First Ticket 액센트 (동일 이유)
   ink:     hex('1A2332'), // 밝은 배경용
   gray:    hex('6B7684'),
@@ -200,7 +200,7 @@ function Slide(name, x, bg) {
   const sw = (CW - 48) / 4;
   [['측정 기반 개선', '골든셋 자동 평가 · nGrinder/k6 부하 테스트로 모든 변경을 전후 비교', C.teal],
    ['인증 · 보안 설계', 'JWT 무효화 · SSRF 차단 · 소유권 경계 · 정적 진단 대응', C.purple],
-   ['병목 진단', "Little's Law로 한계 계산, 설정 전달 경로까지 역추적", C.teal],
+   ['병목 진단', "Little's Law로 한계 계산 · EXPLAIN 실행계획으로 인덱스 선택 확인", C.teal],
    ['LLM 애플리케이션', 'RAG 파이프라인 · Tool Calling · GPU 자원 admission control', C.purple]
   ].forEach(([t, d, accent]) => {
     const c = Card(sw, { pad: 22, gap: 8 });
@@ -221,7 +221,7 @@ function Slide(name, x, bg) {
 
   const projects = HStack(20);
   const pw = (CW - 20) / 2;
-  [{ name: 'BTLLM', accent: C.purple, order: '01',
+  [{ name: 'Personal RAG', accent: C.purple, order: '01',
      desc: '8GB VRAM 개인 PC에서 동작하는 로컬 RAG 문서 비서',
      meta: '2026.02 ~ 2026.03 · 1인 개발',
      stats: [['0% → 50%', 'RAG 답변 통과율'], ['P0 4건', '보안 취약점 수정'], ['37.2s → 1.2s', '콜드스타트']] },
