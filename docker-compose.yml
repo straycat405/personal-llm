@@ -7,9 +7,12 @@ services:
     environment:
       POSTGRES_DB: btllm
       POSTGRES_USER: btllm
-      POSTGRES_PASSWORD: btllm1234
+      # [보안] 기본값 없음 — JWT_SECRET과 동일한 안전 실패 패턴. 생성 예: openssl rand -base64 24
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD 환경변수가 필요합니다. openssl rand -base64 24 로 생성 후 .env에 저장하세요.}
     ports:
-      - "5433:5432"   # 로컬 기본 5432 충돌 방지 (개발 환경과 동일 포트)
+      # [보안] loopback 전용 바인딩 — 컨테이너 간 통신(backend→db)은 내부 네트워크(hostname db)로
+      #   이루어지므로 host 포트는 로컬 개발자의 DB 클라이언트 접속용일 뿐이다.
+      - "127.0.0.1:5433:5432"   # 로컬 기본 5432 충돌 방지 (개발 환경과 동일 포트)
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -32,7 +35,8 @@ services:
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/btllm
       SPRING_DATASOURCE_USERNAME: btllm
-      SPRING_DATASOURCE_PASSWORD: btllm1234
+      # [보안] db 서비스와 동일한 POSTGRES_PASSWORD 변수를 재사용 — 값 불일치로 인한 접속 실패 방지
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD 환경변수가 필요합니다. openssl rand -base64 24 로 생성 후 .env에 저장하세요.}
       # [설계] host.docker.internal: 컨테이너 → 호스트 로컬 Ollama 접근
       SPRING_AI_OLLAMA_BASE_URL: http://host.docker.internal:11434
       # [보안] 기본값 없음 — 미설정 시 compose 기동 자체가 실패한다(안전 실패).
@@ -50,15 +54,17 @@ services:
     image: prom/prometheus:v2.52.0
     container_name: btllm-prometheus
     ports:
-      - "9090:9090"
+      - "127.0.0.1:9090:9090"   # [보안] loopback 전용 — Grafana는 내부 네트워크(hostname prometheus)로 접속
     volumes:
       - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
       - prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
-      - '--web.enable-lifecycle'             # POST /-/reload 로 설정 핫리로드 가능
-      - '--web.enable-remote-write-receiver' # k6 → Prometheus remote write 수신 허용
+      # [보안] --web.enable-lifecycle(POST /-/reload)과 --web.enable-remote-write-receiver는
+      #   제거했다. lifecycle은 컨테이너 재시작으로 대체 가능한 편의 기능이고, remote-write는
+      #   k6 스크립트(k6/*.js) 어디에서도 실제로 쓰이지 않는 죽은 설정이었다(grep으로 확인).
+      #   둘 다 불필요한 control endpoint이므로 공격면만 넓혔다.
     # [설계] host.docker.internal: IntelliJ 실행 백엔드(host:8080) 스크래핑용
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -68,13 +74,14 @@ services:
     image: grafana/grafana:11.0.0
     container_name: btllm-grafana
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"   # [보안] loopback 전용
     volumes:
       - grafana_data:/var/lib/grafana
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
     environment:
       GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: admin
+      # [보안] 기본값 없음 — admin/admin 고정 계정 제거. 생성 예: openssl rand -base64 18
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD 환경변수가 필요합니다. openssl rand -base64 18 로 생성 후 .env에 저장하세요.}
       GF_USERS_ALLOW_SIGN_UP: "false"
     depends_on:
       - prometheus
@@ -86,7 +93,12 @@ services:
     container_name: btllm-loki
     user: "0"   # Windows Docker Desktop volume 권한 우회 — root로 실행
     ports:
-      - "3100:3100"
+      # [보안] loopback 전용. Promtail→Loki, Grafana→Loki는 내부 네트워크(hostname loki)로 통신하므로
+      #   host 포트는 개발자가 직접 API를 찌를 때만 쓰인다.
+      # [알려진 한계] auth_enabled: false는 그대로 둔다 — 멀티테넌트 인증 도입은 이 저장소 규모(단일
+      #   개발자 로컬 환경) 대비 과한 인프라라 loopback 바인딩으로 충분하다고 판단. 외부 노출 시
+      #   반드시 auth_enabled 활성화나 리버스 프록시 인증을 추가해야 한다.
+      - "127.0.0.1:3100:3100"
     volumes:
       - ./monitoring/loki/loki-config.yml:/etc/loki/local-config.yaml
       - loki_data:/tmp/loki

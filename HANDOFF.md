@@ -18,8 +18,8 @@
 **P0 진행 상황**:
 
 1. ✅ **완료** — P0 보안 #1: Compose JWT 기본 키 제거와 시작 실패 검증 (아래 "P0 #1 완료 기록" 참고)
-2. ⏭ **다음** — P0 보안 #2: Docker DB·Grafana·Prometheus·Loki 포트/기본 계정 잠금
-3. P0 보안 #3: `/api/v1/admin/etl/**` 권한 정책과 RAG 소유권 모델 결정·적용
+2. ✅ **완료** — P0 보안 #2: Docker DB·Grafana·Prometheus·Loki 포트/기본 계정 잠금 (아래 "P0 #2 완료 기록" 참고)
+3. ⏭ **다음** — P0 보안 #3: `/api/v1/admin/etl/**` 권한 정책과 RAG 소유권 모델 결정·적용
 4. P0 보안 #4: ETL 및 LLM 크롤러 SSRF 공통 차단기 구현
 5. P1 성능/안정성: GPU 단일 작업 큐, ETL bounded executor, 사용자별 동시성·취소·과금 한도
 6. P1 안정성: SSE 스레드/진행정보 수명 관리, WebSocket 구독 취소
@@ -61,6 +61,37 @@
 - **미적용/후속 과제**: 기존에 이미 발급된 토큰의 회전·무효화는 시크릿 교체 자체로 자동 해결됨(서명 불일치로
   전부 무효화). 별도 revoke 리스트나 refresh token은 이번 범위 밖.
 - PDF 표 구조 실험(미커밋)은 건드리지 않음 — `git status`로 확인, 별도 유지.
+
+### P0 #2 완료 기록 (Docker 포트 loopback 바인딩·기본 계정 제거)
+
+**변경 파일**: [docker-compose.yml](docker-compose.yml), [.env.example](.env.example), [README.md](README.md).
+
+- `db`(5433)·`prometheus`(9090)·`grafana`(3000)·`loki`(3100) 네 서비스 모두 host 포트를
+  `127.0.0.1:<port>:<port>`로 바인딩 — LAN/외부에서 접근 불가, 로컬 개발자 접속만 가능.
+  `backend`의 8080은 의도된 서비스 진입점이라 손대지 않음(JWT 인증으로 이미 보호됨, HANDOFF
+  P0 #2 범위도 DB·관측 스택으로 한정).
+  - 서비스 간 통신(Grafana→Prometheus/Loki `http://prometheus:9090`, `http://loki:3100`,
+    backend→db `db:5432`)은 host 포트가 아니라 Docker 내부 네트워크(서비스명)로 이루어짐을
+    `monitoring/grafana/provisioning/datasources/datasources.yml`로 확인 — loopback 바인딩이
+    내부 기능을 깨지 않음.
+- `POSTGRES_PASSWORD`: 기존 하드코딩된 `btllm1234` 제거, `db`·`backend` 두 서비스가 동일 env var를
+  공유하도록 변경. JWT_SECRET과 동일한 `${VAR:?...}` 안전 실패 패턴.
+- `GRAFANA_ADMIN_PASSWORD`: 기존 하드코딩된 `admin/admin` 중 비밀번호를 env var로 전환(안전 실패).
+  `GF_SECURITY_ADMIN_USER: admin`은 그대로 둠 — 사용자명은 비밀이 아니라 식별자.
+- Prometheus 커맨드 플래그에서 `--web.enable-lifecycle`(POST /-/reload 핫리로드)과
+  `--web.enable-remote-write-receiver`(k6 remote write 수신) 제거 — 불필요한 control endpoint.
+  `--web.enable-remote-write-receiver`는 `k6/*.js` 전체를 grep해도 실제로 쓰는 스크립트가
+  없는 죽은 설정이었음을 확인 후 제거. lifecycle은 컨테이너 재시작으로 대체 가능.
+- **의도적으로 그대로 둔 것**: Loki `auth_enabled: false`. 멀티테넌트 인증 도입은 단일 개발자
+  로컬 환경 규모 대비 과한 인프라라고 판단, loopback 바인딩으로 대체. 외부 노출 시에는 반드시
+  auth 활성화나 리버스 프록시 인증이 필요하다고 주석·HANDOFF 양쪽에 명시.
+- 검증: `docker compose config`로 (a) `JWT_SECRET`/`POSTGRES_PASSWORD`/`GRAFANA_ADMIN_PASSWORD`
+  각각 단독 누락 시 개별 실패 메시지 확인 (b) 세 값 모두 설정 시 성공 + 렌더링된 설정에서 4개 포트
+  전부 `host_ip: 127.0.0.1`인지 실측 확인. 코드 변경 없어(compose/문서만) 백엔드 테스트 재실행 불필요.
+- **후속 과제**: DB 비밀번호 회전 시 `postgres_data` 볼륨의 기존 비밀번호와 불일치하면 컨테이너가
+  뜨지 않는다(Postgres는 최초 initdb 시점 비밀번호만 반영) — 기존 로컬 볼륨 재사용 시 볼륨을
+  삭제하거나 `ALTER USER`로 맞춰야 함. 이번 세션에서는 문서화만 하고 실제 볼륨 마이그레이션은
+  하지 않음(사용자 로컬 데이터 삭제 판단은 사용자 몫).
 
 ---
 

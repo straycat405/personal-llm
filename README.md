@@ -150,13 +150,28 @@ ollama pull bge-m3     # 임베딩
 
 ### Docker Compose 실행 (백엔드 + DB)
 
-`JWT_SECRET` 미설정 시 기동이 실패한다(안전 실패) — 먼저 루트 `.env`를 준비한다.
+`JWT_SECRET`·`POSTGRES_PASSWORD`·`GRAFANA_ADMIN_PASSWORD` 중 하나라도 미설정이면 기동이
+실패한다(안전 실패) — 먼저 루트 `.env`를 준비한다.
 
 ```bash
 cp .env.example .env
-# .env의 JWT_SECRET= 뒤에 openssl rand -base64 32 결과를 채운다
+# .env를 열어 아래 세 값을 채운다
+#   JWT_SECRET=$(openssl rand -base64 32)
+#   POSTGRES_PASSWORD=$(openssl rand -base64 24)
+#   GRAFANA_ADMIN_PASSWORD=$(openssl rand -base64 18)
 docker compose up -d
 ```
+
+| 루트 `.env` 변수 | 용도 |
+|---|---|
+| `JWT_SECRET` | JWT 서명 키. 32바이트 미만/알려진 placeholder면 백엔드 기동 실패 |
+| `POSTGRES_PASSWORD` | PostgreSQL 비밀번호. `db`·`backend` 두 서비스가 공유 |
+| `GRAFANA_ADMIN_PASSWORD` | Grafana admin 계정 비밀번호(기존 `admin/admin` 고정값 대체) |
+
+> **주의**: `db`(5433)·`prometheus`(9090)·`grafana`(3000)·`loki`(3100)는 모두 `127.0.0.1`에만
+> 바인딩된다 — 같은 호스트에서는 그대로 접속되지만 다른 기기(LAN)에서는 접근할 수 없다.
+> 서비스 간 통신(Grafana→Prometheus/Loki, backend→db)은 host 포트가 아니라 Docker 내부
+> 네트워크(서비스명)로 이루어지므로 영향받지 않는다.
 
 ### 프론트엔드 개발 서버
 
