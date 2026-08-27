@@ -1,5 +1,6 @@
 package com.bigteam.btllm.rag.controller;
 
+import com.bigteam.btllm.common.jwt.AuthUser;
 import com.bigteam.btllm.common.response.ApiResponse;
 import com.bigteam.btllm.rag.dto.EtlJobResponse;
 import com.bigteam.btllm.rag.dto.EtlSourceResponse;
@@ -12,6 +13,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -48,43 +50,52 @@ public class EtlController {
 
     @PostMapping("/url")
     public ResponseEntity<ApiResponse<EtlJobResponse>> ingestUrl(
-        @Valid @RequestBody EtlUrlRequest request) {
+        @Valid @RequestBody EtlUrlRequest request,
+        @AuthenticationPrincipal AuthUser authUser) {
 
         String jobId = UUID.randomUUID().toString();
         tracker.init(jobId);
-        etlPipelineService.ingestUrlAsync(request.url(), jobId);
+        etlPipelineService.ingestUrlAsync(request.url(), jobId, authUser.id());
         return ResponseEntity.accepted().body(ApiResponse.ok(new EtlJobResponse(jobId)));
     }
 
     @PostMapping("/pdf")
     public ResponseEntity<ApiResponse<EtlJobResponse>> ingestPdf(
-        @RequestParam("file") MultipartFile file) throws IOException {
+        @RequestParam("file") MultipartFile file,
+        @AuthenticationPrincipal AuthUser authUser) throws IOException {
 
         String jobId = UUID.randomUUID().toString();
         tracker.init(jobId);
         etlPipelineService.ingestPdfAsync(
             file.getBytes(),
             file.getOriginalFilename() != null ? file.getOriginalFilename() : "unknown.pdf",
-            jobId
+            jobId,
+            authUser.id()
         );
         return ResponseEntity.accepted().body(ApiResponse.ok(new EtlJobResponse(jobId)));
     }
 
     @PostMapping("/file")
     public ResponseEntity<ApiResponse<EtlJobResponse>> ingestFile(
-        @RequestParam("file") MultipartFile file) throws IOException {
+        @RequestParam("file") MultipartFile file,
+        @AuthenticationPrincipal AuthUser authUser) throws IOException {
 
         String jobId = UUID.randomUUID().toString();
         tracker.init(jobId);
         etlPipelineService.ingestFileAsync(
             file.getBytes(),
             file.getOriginalFilename() != null ? file.getOriginalFilename() : "unknown",
-            jobId
+            jobId,
+            authUser.id()
         );
         return ResponseEntity.accepted().body(ApiResponse.ok(new EtlJobResponse(jobId)));
     }
 
     // ── GET: SSE 진행률 스트림 ────────────────────────────────
+    // [알려진 한계] permitAll이라 소유권 predicate를 걸 신원 정보가 없다(EventSource는 커스텀
+    //   헤더를 못 보낸다). progress 메시지는 파일명·문서 내용을 담지 않고 퍼센트/상태 문구뿐이라
+    //   노출 시 피해가 작고, UUID jobId도 추측 불가하다. 신원 있는 SSE(서명 티켓 등)는 P1 과제로
+    //   HANDOFF에 남겨둔다 — 이 컨트롤러의 다른 엔드포인트(ingest/list/delete)는 이미 소유권을 강제한다.
 
     @GetMapping(value = "/{jobId}/progress", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter progress(@PathVariable String jobId) {
@@ -131,16 +142,20 @@ public class EtlController {
     // ── GET: 인덱싱된 소스 목록 ──────────────────────────────
 
     @GetMapping("/sources")
-    public ResponseEntity<ApiResponse<List<EtlSourceResponse>>> listSources() {
-        return ResponseEntity.ok(ApiResponse.ok(etlSourceService.listSources()));
+    public ResponseEntity<ApiResponse<List<EtlSourceResponse>>> listSources(
+            @AuthenticationPrincipal AuthUser authUser) {
+        return ResponseEntity.ok(ApiResponse.ok(etlSourceService.listSources(authUser.id())));
     }
 
     // ── DELETE: source 기준 청크 전체 삭제 ───────────────────
     // [설계] source는 URL 슬래시 포함 가능 → @PathVariable 대신 @RequestParam 사용
+    // [보안] 소유권 predicate를 SQL WHERE 절에 함께 걸어, 다른 사용자의 source 이름을 넣어도
+    //   0건 삭제로 끝난다 — 존재 여부조차 알려주지 않는다.
     @DeleteMapping("/sources")
     public ResponseEntity<ApiResponse<Map<String, Integer>>> deleteSource(
-            @RequestParam String source) {
-        int deleted = etlSourceService.deleteSource(source);
+            @RequestParam String source,
+            @AuthenticationPrincipal AuthUser authUser) {
+        int deleted = etlSourceService.deleteSource(source, authUser.id());
         return ResponseEntity.ok(ApiResponse.ok(Map.of("deleted", deleted)));
     }
 }

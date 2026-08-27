@@ -18,6 +18,7 @@ import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.ai.vectorstore.filter.FilterExpressionBuilder;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -121,14 +122,24 @@ public class LlmTools {
 		description = "업로드된 문서(지식베이스)를 검색합니다. " +
 			"사용자가 문서, 자료, 파일, PDF, 업로드한 내용, 인덱싱한 내용에 대해 물으면 반드시 이 도구를 호출하세요.")
 	public String searchKnowledgeBase(
-		@ToolParam(description = "지식베이스에서 검색할 질의문") String query
+		@ToolParam(description = "지식베이스에서 검색할 질의문") String query,
+		ToolContext toolContext   // [설계] LLM 파라미터 목록에 포함되지 않음 — Spring AI가 자동 주입
 	) {
+		// [보안] 소유권 모델: 문서는 업로드한 사용자 개인 소유다. userId 없이 호출됐다면(예: 프로그래밍
+		//   오류로 toolContext 미설정) 검색을 진행하지 않고 즉시 실패시킨다 — 필터 없는 검색으로
+		//   빠지면 전체 사용자의 문서가 그대로 노출되므로 "실패 시 열림" 대신 "실패 시 닫힘"을 택한다.
+		Long ownerId = (Long) toolContext.getContext().get("userId");
+		if (ownerId == null) {
+			log.warn("지식베이스 검색 거부 — toolContext에 userId 없음 (query: {})", query);
+			return "지식베이스 검색 중 오류가 발생했습니다. 일반 지식으로 답변하세요.";
+		}
 		try {
 			List<Document> candidates = vectorStore.similaritySearch(
 				SearchRequest.builder()
 					.query(query)
 					.topK(RagSearchSettings.RERANK_CANDIDATE_K)
 					.similarityThreshold(RagSearchSettings.SIMILARITY_THRESHOLD)
+					.filterExpression(new FilterExpressionBuilder().eq("owner_id", ownerId).build())
 					.build()
 			);
 			// [설계] 후보를 TOP_K(3)보다 넓게(RERANK_CANDIDATE_K=10) 가져온 뒤 키워드 겹침으로
@@ -145,7 +156,7 @@ public class LlmTools {
 				//   벡터 검색이 항상 0건을 낸다. 그대로 "못 찾았다"고만 답하면 문서가 멀쩡히
 				//   인덱싱돼 있는데도 없다고 답하게 된다. 목록을 함께 주면 모델이
 				//   "○○ 문서가 있습니다"라고 정확히 답할 수 있다.
-				List<EtlSourceResponse> sources = etlSourceService.listSources();
+				List<EtlSourceResponse> sources = etlSourceService.listSources(ownerId);
 				if (sources.isEmpty()) {
 					return "지식베이스가 비어 있습니다. 인덱싱된 문서가 없습니다.";
 				}

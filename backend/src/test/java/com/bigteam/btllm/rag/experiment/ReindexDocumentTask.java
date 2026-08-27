@@ -34,6 +34,9 @@ class ReindexDocumentTask {
 
     private static final String PDF_PATH = System.getenv("REINDEX_PDF_PATH");
     private static final long TIMEOUT_MS = 600_000;   // 로컬 모델 요약 포함이라 넉넉히 잡는다
+    // [설계] REST 우회 유틸이라 실제 JWT 사용자가 없다 — 로컬 테스트 계정(persisttest@test.com,
+    //   id=1)에 재색인한다는 전제로 고정한다(P0 #3 사용자별 소유 문서 모델).
+    private static final Long OWNER_ID = 1L;
 
     @Autowired EtlPipelineService etlPipelineService;
     @Autowired EtlProgressTracker tracker;
@@ -51,12 +54,12 @@ class ReindexDocumentTask {
         String filename = path.getFileName().toString();
         byte[] bytes = Files.readAllBytes(path);
 
-        int deleted = etlSourceService.deleteSource(filename);
+        int deleted = etlSourceService.deleteSource(filename, OWNER_ID);
         System.out.printf("기존 청크 삭제 — source: %s, %d건%n", filename, deleted);
 
         String jobId = UUID.randomUUID().toString();
         tracker.init(jobId);
-        etlPipelineService.ingestPdfAsync(bytes, filename, jobId);
+        etlPipelineService.ingestPdfAsync(bytes, filename, jobId, OWNER_ID);
 
         long deadline = System.currentTimeMillis() + TIMEOUT_MS;
         EtlProgressTracker.ProgressInfo info;
@@ -77,7 +80,7 @@ class ReindexDocumentTask {
         assertThat(info.error()).as("색인 오류가 없어야 합니다").isNull();
 
         System.out.println("현재 인덱싱된 문서:");
-        etlSourceService.listSources().forEach(source ->
+        etlSourceService.listSources(OWNER_ID).forEach(source ->
             System.out.printf("  - %s (%d청크)%n", source.source(), source.chunkCount()));
     }
 }

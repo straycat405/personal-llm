@@ -167,7 +167,9 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
             .advisors(spec -> spec.param(
                 ChatMemory.CONVERSATION_ID, request.conversationId()))
             .tools(llmTools)
-            .toolContext(Map.of("conversationId", request.conversationId()))
+            // [보안] userId도 함께 주입 — searchKnowledgeBase가 호출자 소유 문서만 검색하도록
+            //   ownerId를 여기서 흘려보낸다(LLM 파라미터 스키마에는 노출되지 않음).
+            .toolContext(Map.of("conversationId", request.conversationId(), "userId", userId))
             .stream()
             .chatResponse()
             .subscribe(

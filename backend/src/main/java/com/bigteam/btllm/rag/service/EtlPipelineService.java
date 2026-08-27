@@ -54,7 +54,7 @@ public class EtlPipelineService {
     // 컨트롤러에서 호출 → Spring AOP 프록시를 통해 별도 스레드에서 실행
 
     @Async
-    public void ingestUrlAsync(String url, String jobId) {
+    public void ingestUrlAsync(String url, String jobId, Long ownerId) {
         try {
             tracker.update(jobId, 2, "URL 크롤링 중...");
             org.jsoup.nodes.Document html = Jsoup.connect(url)
@@ -71,7 +71,7 @@ public class EtlPipelineService {
             tracker.update(jobId, 5, "크롤링 완료");
 
             Document doc = new Document(text, Map.of("source", url, "type", "web"));
-            pipelineWithProgress(List.of(doc), jobId);
+            pipelineWithProgress(List.of(doc), jobId, ownerId);
 
         } catch (IOException e) {
             log.error("URL 크롤링 실패 — url: {}, reason: {}", url, e.getMessage());
@@ -83,7 +83,7 @@ public class EtlPipelineService {
     }
 
     @Async
-    public void ingestPdfAsync(byte[] bytes, String filename, String jobId) {
+    public void ingestPdfAsync(byte[] bytes, String filename, String jobId, Long ownerId) {
         try {
             tracker.update(jobId, 2, "PDF 읽는 중...");
             Resource resource = namedByteResource(bytes, filename);
@@ -95,7 +95,7 @@ public class EtlPipelineService {
             log.info("PDF 읽기 완료 — file: {}, pages: {}", filename, docs.size());
             tracker.update(jobId, 5, "파일 읽기 완료 (" + docs.size() + "페이지)");
 
-            pipelineWithProgress(docs, jobId);
+            pipelineWithProgress(docs, jobId, ownerId);
 
         } catch (Exception e) {
             log.error("PDF 비동기 인덱싱 실패 — file: {}", filename, e);
@@ -104,7 +104,7 @@ public class EtlPipelineService {
     }
 
     @Async
-    public void ingestFileAsync(byte[] bytes, String filename, String jobId) {
+    public void ingestFileAsync(byte[] bytes, String filename, String jobId, Long ownerId) {
         try {
             tracker.update(jobId, 2, "파일 읽는 중...");
             Resource resource = namedByteResource(bytes, filename);
@@ -116,7 +116,7 @@ public class EtlPipelineService {
             log.info("파일 읽기 완료 — file: {}, docs: {}", filename, docs.size());
             tracker.update(jobId, 5, "파일 읽기 완료");
 
-            pipelineWithProgress(docs, jobId);
+            pipelineWithProgress(docs, jobId, ownerId);
 
         } catch (Exception e) {
             log.error("파일 비동기 인덱싱 실패 — file: {}", filename, e);
@@ -134,7 +134,7 @@ public class EtlPipelineService {
      * - RAG 검색 정밀도보다 인덱싱 속도 우선 (포트폴리오 데모 환경)
      * - 키워드 메타데이터 없이도 bge-m3 벡터 유사도 검색으로 충분한 품질
      */
-    private void pipelineWithProgress(List<Document> docs, String jobId) {
+    private void pipelineWithProgress(List<Document> docs, String jobId, Long ownerId) {
         // 1단계: 청크 분할 (5 → 25%)
         List<Document> chunks = new TokenTextSplitter(chunkSize, 200, 5, 10000, true,
             List.of('.', '?', '!', '\n')).apply(docs);
@@ -157,6 +157,11 @@ public class EtlPipelineService {
 
         List<Document> toIndex = new ArrayList<>(chunks);
         toIndex.addAll(summaries);
+        // [보안] 소유권 모델: 문서는 업로드한 사용자 개인 소유다(공유 관리자 KB 아님).
+        //   청크·요약 전체에 owner_id를 찍어 검색/목록/삭제가 이 값으로 필터링할 수 있게 한다.
+        //   TokenTextSplitter/summarizer가 만든 새 Document라 부모 metadata를 그대로 물려받는지
+        //   보장할 수 없어, 분할·요약이 끝난 최종 목록에 한 번에 명시적으로 찍는다.
+        toIndex.forEach(document -> document.getMetadata().put("owner_id", ownerId));
         tracker.update(jobId, 40, summaries.isEmpty()
             ? "임베딩 시작 (" + chunks.size() + "개 청크)"
             : "개요 요약 완료 — 임베딩 시작 (" + chunks.size() + "개 청크 + 개요 1개)");

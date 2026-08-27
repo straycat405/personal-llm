@@ -14,6 +14,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.ai.chat.model.ToolContext;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
@@ -38,6 +39,10 @@ class LlmToolsTest {
 
     @InjectMocks LlmTools llmTools;
 
+    // [설계] P0 #3 사용자별 소유 문서 모델 — searchKnowledgeBase가 owner_id 필터를 걸려면
+    // toolContext에 userId가 있어야 한다. ChatWebSocketHandler가 실제로 주입하는 값과 동일한 키.
+    private static final ToolContext OWNER_CONTEXT = new ToolContext(Map.of("userId", 1L));
+
     @Test
     @DisplayName("검색 결과를 관련도 순위·출처·청크 위치와 함께 반환한다")
     void formatsRankedKnowledgeResults() {
@@ -48,7 +53,7 @@ class LlmToolsTest {
         given(vectorStore.similaritySearch(any(SearchRequest.class)))
             .willReturn(List.of(first, second));
 
-        String result = llmTools.searchKnowledgeBase("프로젝트를 설명해줘");
+        String result = llmTools.searchKnowledgeBase("프로젝트를 설명해줘", OWNER_CONTEXT);
 
         assertThat(result)
             .contains("[지식베이스 검색 결과]")
@@ -65,16 +70,30 @@ class LlmToolsTest {
         verify(vectorStore).similaritySearch(request.capture());
         assertThat(request.getValue().getTopK()).isEqualTo(RagSearchSettings.RERANK_CANDIDATE_K);
         assertThat(request.getValue().getSimilarityThreshold()).isEqualTo(0.5);
+        // [보안] P0 #3 — 검색이 toolContext의 userId로 owner_id 필터를 실제로 거는지 확인.
+        //   이 필터가 빠지면 모든 사용자의 문서가 검색 대상이 된다.
+        assertThat(request.getValue().getFilterExpression().toString())
+            .contains("owner_id")
+            .contains("1");
+    }
+
+    @Test
+    @DisplayName("toolContext에 userId가 없으면 검색을 거부한다 (fail-closed)")
+    void refusesSearchWhenOwnerIdMissing() {
+        String result = llmTools.searchKnowledgeBase("질문", new ToolContext(Map.of()));
+
+        assertThat(result).contains("오류가 발생했습니다");
+        verify(vectorStore, org.mockito.Mockito.never()).similaritySearch(any(SearchRequest.class));
     }
 
     @Test
     @DisplayName("검색 결과가 없으면 현재 인덱싱된 문서 목록을 반환한다")
     void returnsSourceListWhenSearchHasNoHits() {
         given(vectorStore.similaritySearch(any(SearchRequest.class))).willReturn(List.of());
-        given(etlSourceService.listSources()).willReturn(List.of(
+        given(etlSourceService.listSources(1L)).willReturn(List.of(
             new EtlSourceResponse("창업공고.pdf", "file", 21)));
 
-        String result = llmTools.searchKnowledgeBase("방금 올린 문서가 뭐야?");
+        String result = llmTools.searchKnowledgeBase("방금 올린 문서가 뭐야?", OWNER_CONTEXT);
 
         assertThat(result)
             .contains("질의와 직접 일치하는 내용은 찾지 못했습니다")
@@ -87,7 +106,7 @@ class LlmToolsTest {
         given(vectorStore.similaritySearch(any(SearchRequest.class)))
             .willReturn(List.of(new Document("근거 본문")));
 
-        String result = llmTools.searchKnowledgeBase("질문");
+        String result = llmTools.searchKnowledgeBase("질문", OWNER_CONTEXT);
 
         assertThat(result)
             .contains("[관련도 1위]")

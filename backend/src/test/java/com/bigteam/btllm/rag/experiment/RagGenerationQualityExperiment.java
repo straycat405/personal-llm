@@ -57,7 +57,10 @@ class RagGenerationQualityExperiment {
 
     @Test
     void measureGeneratedAnswerQuality() throws Exception {
-        assertThat(etlSourceService.listSources())
+        // [설계] listSources는 이제 owner_id로 걸러진다(P0 #3 사용자별 소유 문서 모델).
+        //   이 실험은 로컬 테스트 계정(persisttest@test.com, id=1)으로 대상 PDF를 미리
+        //   인덱싱해뒀다는 전제로 돌아간다 — 다른 계정으로 색인했다면 이 값을 맞춰야 한다.
+        assertThat(etlSourceService.listSources(1L))
             .as("평가 대상 PDF가 먼저 인덱싱되어 있어야 합니다")
             .anyMatch(source -> source.source().contains(TARGET_SOURCE_KEYWORD));
 
