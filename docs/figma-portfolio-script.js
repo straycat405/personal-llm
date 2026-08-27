@@ -195,6 +195,23 @@ function Bullet(width, txt, { color = C.ink, size = 16 } = {}) {
   return row;
 }
 
+/**
+ * 가로로 늘어선 카드들의 높이를 가장 큰 것에 맞춘다.
+ * auto-layout 자식은 기본이 HUG라 내용량에 따라 제각각 끝나서 아랫변이 어긋나 보인다.
+ * resize()가 sizing mode를 FIXED로 바꾸므로 그 뒤에 명시적으로 한 번 더 고정한다.
+ */
+function equalize(hstack) {
+  const kids = hstack.children.filter((k) => k.type === 'FRAME');
+  if (kids.length < 2) return hstack;
+  const max = Math.max.apply(null, kids.map((k) => k.height));
+  for (const k of kids) {
+    if (Math.abs(k.height - max) < 0.5) continue;
+    k.resize(k.width, max);
+    if (k.layoutMode && k.layoutMode !== 'NONE') k.layoutSizingVertical = 'FIXED';
+  }
+  return hstack;
+}
+
 /** 아키텍처 다이어그램용 노드 박스 */
 function NodeBox(w, title, sub, { bg = C.white, tc = C.navy, sc = C.gray } = {}) {
   const b = AL('VERTICAL', {
@@ -403,7 +420,7 @@ const CW = W - PAD_X * 2; // 콘텐츠 폭 = 1680
   cInfra.appendChild(NodeBox(496, 'PostgreSQL + pgvector', '문서 청크 · 임베딩 · 대화 이력', { bg: C.dark, tc: C.white, sc: C.border }));
   arch.appendChild(cInfra);
 
-  col.appendChild(arch);
+  col.appendChild(equalize(arch));
 
   // 제약 배너
   const banner = Card(CW, { bg: C.soft, pad: 22, gap: 6, stroke: false });
@@ -489,7 +506,7 @@ const CW = W - PAD_X * 2; // 콘텐츠 폭 = 1680
   right.appendChild(note);
   two.appendChild(right);
 
-  col.appendChild(two);
+  col.appendChild(equalize(two));
   Footer(s, 3, TOTAL);
 }
 
@@ -533,7 +550,7 @@ const CW = W - PAD_X * 2; // 콘텐츠 폭 = 1680
   const MW = (iw - 12) / 2, MV = 32;
   mA.appendChild(Metric(MW, '100% → 0%', 'k6 에러율', { valueSize: MV }));
   mA.appendChild(Metric(MW, '37.2s → 1.2s', '콜드스타트 (-97%)', { valueSize: MV }));
-  a.appendChild(mA);
+  a.appendChild(equalize(mA));
   two.appendChild(a);
 
   // 케이스 B — thinking
@@ -555,12 +572,12 @@ const CW = W - PAD_X * 2; // 콘텐츠 폭 = 1680
   const mB = HStack(12);
   mB.appendChild(Metric((iw - 12) / 2, '88.9s → 33.0s', '평균 지연 (-63%)', { valueSize: 32 }));
   mB.appendChild(Metric((iw - 12) / 2, '188.6s → 74.5s', 'p95 지연 (-60%)', { valueSize: 32 }));
-  b.appendChild(mB);
+  b.appendChild(equalize(mB));
   b.appendChild(T('끄는 것이 정답은 아니었다 — 사실 포함률은 77.8%→57.1%로 함께 떨어졌다. 트레이드오프를 규명하고 기본값은 품질 우선으로 뒀다.',
     { size: 15, style: S_REG, color: C.gray, w: iw }));
   two.appendChild(b);
 
-  col.appendChild(two);
+  col.appendChild(equalize(two));
   Footer(s, 4, TOTAL);
 }
 
@@ -626,7 +643,7 @@ const CW = W - PAD_X * 2; // 콘텐츠 폭 = 1680
     { size: 16, style: S_REG, color: C.gray, w: iw }));
   two.appendChild(b);
 
-  col.appendChild(two);
+  col.appendChild(equalize(two));
   Footer(s, 5, TOTAL);
 }
 
@@ -677,7 +694,7 @@ const CW = W - PAD_X * 2; // 콘텐츠 폭 = 1680
     c.appendChild(fixBox);
     grid.appendChild(c);
   });
-  col.appendChild(grid);
+  col.appendChild(equalize(grid));
 
   const honest = Card(CW, { bg: C.amber, pad: 24, gap: 6, stroke: false });
   honest.appendChild(T('정직하게 남긴 한계', { size: 16, style: S_BOLD, color: C.ink }));
@@ -708,7 +725,7 @@ const CW = W - PAD_X * 2; // 콘텐츠 폭 = 1680
    ['0% → 100%', 'Tool 호출률']
   // 한 줄에 5칸이라 칸당 폭이 좁다 — 수치 크기를 낮춰 "38.1% → 76.2%" 같은 긴 값도 들어가게 한다
   ].forEach(([v, l]) => metrics.appendChild(Metric(mw, v, l, { valueSize: 27 })));
-  col.appendChild(metrics);
+  col.appendChild(equalize(metrics));
 
   const two = HStack(28);
   two.counterAxisAlignItems = 'MIN';
@@ -736,7 +753,7 @@ const CW = W - PAD_X * 2; // 콘텐츠 폭 = 1680
     { size: 16, style: S_SEMI, color: C.ink, w: iw }));
   two.appendChild(left);
 
-  col.appendChild(two);
+  col.appendChild(equalize(two));
   Footer(s, 7, TOTAL);
 }
 

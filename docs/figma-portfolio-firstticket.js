@@ -193,6 +193,23 @@ function Code(width, lines, { mono = C.white, pad = 18 } = {}) {
   return c;
 }
 
+/**
+ * 가로로 늘어선 카드들의 높이를 가장 큰 것에 맞춘다.
+ * auto-layout 자식은 기본이 HUG라 내용량에 따라 제각각 끝나서 아랫변이 어긋나 보인다.
+ * resize()가 sizing mode를 FIXED로 바꾸므로 그 뒤에 명시적으로 한 번 더 고정한다.
+ */
+function equalize(hstack) {
+  const kids = hstack.children.filter((k) => k.type === 'FRAME');
+  if (kids.length < 2) return hstack;
+  const max = Math.max.apply(null, kids.map((k) => k.height));
+  for (const k of kids) {
+    if (Math.abs(k.height - max) < 0.5) continue;
+    k.resize(k.width, max);
+    if (k.layoutMode && k.layoutMode !== 'NONE') k.layoutSizingVertical = 'FIXED';
+  }
+  return hstack;
+}
+
 /** 아키텍처 다이어그램용 노드 박스 */
 function NodeBox(w, title, sub, { bg = C.white, tc = C.navy, sc = C.gray } = {}) {
   const b = AL('VERTICAL', {
@@ -350,7 +367,7 @@ const CW = W - PAD_X * 2; // 1680
   m.appendChild(BeforeAfter(mw, '24회', '1회', 'Gateway 블랙리스트 조회 스파이크', { sub: '-95.8% · Caffeine L1 캐시 적용' }));
   m.appendChild(Metric(mw, '1,720 TPS', 'GET /users/me 부하테스트 안정 성능', { sub: 'Little\'s Law 오차 1%' }));
   m.appendChild(Metric(mw, '0건', '비밀번호 변경 후 고아 세션', { sub: 'RFC 7009 즉시 revoke' }));
-  col.appendChild(m);
+  col.appendChild(equalize(m));
 
   col.appendChild(Spacer(6));
   col.appendChild(SectionLabel('02 · PROJECT OVERVIEW'));
@@ -394,7 +411,7 @@ const CW = W - PAD_X * 2; // 1680
     c.appendChild(T(d, { size: 15, style: S_REG, color: C.gray, w: ccw - 44 }));
     contrib.appendChild(c);
   });
-  col.appendChild(contrib);
+  col.appendChild(equalize(contrib));
 
   Footer(s, 2, TOTAL);
 }
@@ -451,7 +468,7 @@ const CW = W - PAD_X * 2; // 1680
   cOps.appendChild(NodeBox(ow, 'GitHub Actions', 'CI/CD → ECS Fargate', { bg: C.dark, tc: C.white, sc: C.border }));
   arch.appendChild(cOps);
 
-  col.appendChild(arch);
+  col.appendChild(equalize(arch));
 
   const gw = Card(CW, { bg: C.soft, pad: 24, gap: 10, stroke: false });
   gw.appendChild(T('Gateway 인증 필터 설계 원칙', { size: 18, style: S_BOLD, color: C.accentDk }));
@@ -469,7 +486,7 @@ const CW = W - PAD_X * 2; // 1680
     b.appendChild(T(d, { size: 15, style: S_REG, color: C.gray, w: gwc }));
     gwRow.appendChild(b);
   });
-  gw.appendChild(gwRow);
+  gw.appendChild(equalize(gwRow));
   col.appendChild(gw);
 
   Footer(s, 3, TOTAL);
@@ -558,7 +575,7 @@ const CW = W - PAD_X * 2; // 1680
   ].forEach(([k, v]) => b.appendChild(Bullet(iw, `${k} — ${v}`, { size: 15, color: C.gray })));
   two.appendChild(b);
 
-  col.appendChild(two);
+  col.appendChild(equalize(two));
   Footer(s, 4, TOTAL);
 }
 
@@ -588,7 +605,7 @@ const CW = W - PAD_X * 2; // 1680
   mA.appendChild(BeforeAfter(maw, '24회', '1회', '50ms 초과 스파이크', { size: 24 }));
   mA.appendChild(BeforeAfter(maw, '28.32', '26.18', 'MTT avg (ms)', { size: 24 }));
   mA.appendChild(BeforeAfter(maw, '1,400', '~14', 'Redis 호출/초', { size: 24 }));
-  a.appendChild(mA);
+  a.appendChild(equalize(mA));
 
   a.appendChild(T('원인 분석', { size: 15, style: S_BOLD, color: C.accent, ls: 0.5 }));
   a.appendChild(Bullet(iw, '모든 인증 요청마다 redisTemplate.hasKey("blacklist:{jti}") 1회 → 1,400 TPS면 초당 1,400회 Redis 왕복', { size: 15, color: C.gray }));
@@ -616,7 +633,7 @@ const CW = W - PAD_X * 2; // 1680
   mB.appendChild(BeforeAfter(mbw, '25', '125+', '안정 vuser 한계', { size: 24 }));
   mB.appendChild(BeforeAfter(mbw, '4,917', '0', '에러 건수', { size: 24 }));
   mB.appendChild(BeforeAfter(mbw, '25', '200', 'maxConcurrentCalls', { size: 24 }));
-  b.appendChild(mB);
+  b.appendChild(equalize(mB));
 
   b.appendChild(T('증상 — vuser 25까지는 정상(TPS ~160), 50으로 늘리는 순간 모든 요청 503 · TPS 0',
     { size: 15, style: S_SEMI, color: C.ink, w: iw }));
@@ -638,7 +655,7 @@ const CW = W - PAD_X * 2; // 1680
   b.appendChild(insB);
   two.appendChild(b);
 
-  col.appendChild(two);
+  col.appendChild(equalize(two));
   Footer(s, 5, TOTAL);
 }
 
@@ -668,7 +685,7 @@ const CW = W - PAD_X * 2; // 1680
   mA.appendChild(BeforeAfter(maw, '붕괴', '1,720', '안정 TPS', { size: 24 }));
   mA.appendChild(BeforeAfter(maw, '5,163', '0', '에러 건수', { size: 24 }));
   mA.appendChild(BeforeAfter(maw, '37ms', '11ms', '평균 응답 (-70%)', { size: 24 }));
-  a.appendChild(mA);
+  a.appendChild(equalize(mA));
 
   a.appendChild(T('원인 분석', { size: 15, style: S_BOLD, color: C.accent, ls: 0.5 }));
   a.appendChild(Bullet(iw, "Little's Law 검증: 50 vuser ÷ 37ms = 이론 TPS 1,351 ≈ 실측 1,342 → 코드 버그가 아니라 이론 한계 도달", { size: 15, color: C.gray }));
@@ -700,7 +717,7 @@ const CW = W - PAD_X * 2; // 1680
   mB.appendChild(BeforeAfter(mbw, '175', '1,568', '평균 TPS (+796%)', { size: 24 }));
   mB.appendChild(BeforeAfter(mbw, '25', '125', '안정 vuser', { size: 24 }));
   mB.appendChild(BeforeAfter(mbw, '135ms', '63ms', '평균 응답 (-53%)', { size: 24 }));
-  b.appendChild(mB);
+  b.appendChild(equalize(mB));
 
   b.appendChild(T('원인 분석', { size: 15, style: S_BOLD, color: C.accent, ls: 0.5 }));
   b.appendChild(Bullet(iw, '로그인 응답시간의 97%가 Keycloak ROPC — Gateway <1ms · User Service <5ms · Keycloak ~130ms', { size: 15, color: C.gray }));
@@ -717,14 +734,14 @@ const CW = W - PAD_X * 2; // 1680
   o2.appendChild(T('② Redis AT 캐시', { size: 15, style: S_BOLD, color: C.accentDk }));
   o2.appendChild(T('Keycloak 호출 완전 우회 · 채택', { size: 14, style: S_SEMI, color: C.accentDk }));
   optRow.appendChild(o2);
-  b.appendChild(optRow);
+  b.appendChild(equalize(optRow));
 
   b.appendChild(Bullet(iw, '캐시 키 at-cache:{SHA-256(lower(email))} — PII 보호 + DB LOWER(email) 인덱스 기준 일치', { size: 15, color: C.gray }));
   b.appendChild(Bullet(iw, 'TTL을 JWT exp 기준으로 동적 계산 — Keycloak 설정이 바뀌어도 자동 동기화, 하드코딩 불일치 방지', { size: 15, color: C.gray }));
   b.appendChild(Bullet(iw, 'AT만 캐시하고 RT는 RefreshTokenStore가 단일 진실 공급원 — 로테이션 후 stale RT 반환 불가', { size: 15, color: C.gray }));
   two.appendChild(b);
 
-  col.appendChild(two);
+  col.appendChild(equalize(two));
   Footer(s, 6, TOTAL);
 }
 
@@ -746,7 +763,7 @@ const CW = W - PAD_X * 2; // 1680
    ['붕괴 → 1,720', 'GET /users/me TPS', "Little's Law 오차 1%"],
    ['175 → 1,568', '로그인 TPS', '+796%']
   ].forEach(([v, l, sub]) => metrics.appendChild(Metric(mw, v, l, { sub, valueSize: 23 })));
-  col.appendChild(metrics);
+  col.appendChild(equalize(metrics));
 
   const two = HStack(24);
   two.counterAxisAlignItems = 'MIN';
@@ -789,7 +806,7 @@ const CW = W - PAD_X * 2; // 1680
   retro.appendChild(q);
   two.appendChild(retro);
 
-  col.appendChild(two);
+  col.appendChild(equalize(two));
   Footer(s, 7, TOTAL);
 }
 
