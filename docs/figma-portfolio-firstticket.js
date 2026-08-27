@@ -384,7 +384,9 @@ const CW = W - PAD_X * 2; // 1680
   [['기간', '2026.04 ~ 2026.05 (5주)'],
    ['인원', '6인 백엔드'],
    ['개인 담당', '사용자 도메인 · Gateway · Eureka'],
-   ['저장소', 'github.com/first-ticket']
+   // [설계] 조직 계정(github.com/first-ticket)만 걸면 6인 팀 저장소 중 어디가 본인 작업인지
+   //   확인할 수 없다. 직접 구현한 user-service를 지목한다.
+   ['담당 저장소', 'github.com/first-ticket/user-service']
   ].forEach(([k, v], i) => {
     if (i) meta.appendChild(T('·', { size: 15, style: S_REG, color: C.soft }));
     const item = HStack(7);
