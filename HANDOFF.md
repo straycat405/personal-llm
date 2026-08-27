@@ -21,10 +21,12 @@
 2. ✅ **완료** — P0 보안 #2: Docker DB·Grafana·Prometheus·Loki 포트/기본 계정 잠금 (아래 "P0 #2 완료 기록" 참고)
 3. ✅ **완료** — P0 보안 #3: `/api/v1/admin/etl/**` 권한 정책과 RAG 소유권 모델 결정·적용 (아래 "P0 #3 완료 기록" 참고, 사용자가 "사용자별 소유 문서"로 결정)
 4. ✅ **완료** — P0 보안 #4: ETL 및 LLM 크롤러 SSRF 공통 차단기 구현 (아래 "P0 #4 완료 기록" 참고) — **P0 전체 완료**
-5. ⏭ **다음** — P1 성능/안정성: GPU 단일 작업 큐, ETL bounded executor, 사용자별 동시성·취소·과금 한도
-6. P1 안정성: SSE 스레드/진행정보 수명 관리, WebSocket 구독 취소
-7. P2 유지보수: 스트리밍 문자열 누적, 검색 쿼리·페이지네이션, DB 마이그레이션·운영 프로필
-8. 보수 기준선이 안정된 뒤에만 미커밋 PDF 파서 실험 재개
+5. ✅ **완료** — P1 #5: GPU admission control(채팅 생성 단일 슬롯 큐 + 세션당 in-flight 1개 + 취소) (아래 "P1 #5 완료 기록" 참고)
+6. ⏭ **다음** — P1 #6: ETL bounded executor/파서 예산 (P1 #5 큐와의 통합 여부 결정 필요 — 아래 참고)
+7. P1 #7: provider/model·비용 통제 (서버 allowlist, cache 상한, 외부 provider 토큰·동시성 한도)
+8. P1 #8: SSE/progress 수명 관리 (raw thread 제거, owner 검증, TTL cleanup, subscriber 제한)
+9. P2 유지보수: 스트리밍 문자열 누적, 검색 쿼리·페이지네이션, DB 마이그레이션·운영 프로필
+10. 보수 기준선이 안정된 뒤에만 미커밋 PDF 파서 실험 재개
 
 **저장소 상태**:
 
@@ -181,6 +183,50 @@
   `git stash pop`이 자동 병합에 실패하고 충돌 마커를 남겼다 — 두 import(`SafeUrlFetcher`,
   `LayoutAwarePdfDocumentReader`)를 수동으로 나란히 남기는 것으로 직접 해결했다. 병합 후
   전체 컴파일 재확인 완료.
+
+### P1 #5 완료 기록 (GPU admission control — 채팅 생성)
+
+**신규 파일**: [OllamaGenerationQueue.java](backend/src/main/java/com/bigteam/btllm/chat/service/OllamaGenerationQueue.java),
+테스트 [OllamaGenerationQueueTest.java](backend/src/test/java/com/bigteam/btllm/chat/service/OllamaGenerationQueueTest.java),
+[ChatWebSocketHandlerAdmissionTest.java](backend/src/test/java/com/bigteam/btllm/chat/controller/ChatWebSocketHandlerAdmissionTest.java).
+**변경 파일**: [ChatWebSocketHandler.java](backend/src/main/java/com/bigteam/btllm/chat/controller/ChatWebSocketHandler.java),
+`application.yaml`(`btllm.gpu.queue-capacity`), README(`BTLLM_GPU_QUEUE_CAPACITY` 문서화).
+
+- **문제(HANDOFF 4-1)**: 메시지마다 독립 `.subscribe()`를 호출하고 반환값(Disposable)을
+  버렸다 — 한 세션이 여러 요청을 동시에 시작할 수 있었고, 연결이 끊겨도 이미 시작된 Ollama
+  호출이 백그라운드에서 GPU를 계속 점유했다. `QUEUED` 응답은 안내 문구일 뿐 서버가 순서를
+  강제하지 않았다.
+- **GPU 큐**: `OllamaGenerationQueue` — `ThreadPoolExecutor(core=max=1, bounded queue)`로
+  Ollama 채팅 생성만 직렬화한다. 상용 provider(Claude/OpenAI/Gemini)는 이 큐를 거치지
+  않는다 — 물리적으로 공유하는 자원이 아니라 로컬 GPU 제약으로 직렬화하면 손해만 본다.
+  대기열 상한은 `BTLLM_GPU_QUEUE_CAPACITY`(기본 8) — 가득 차면 `RejectedExecutionException`
+  → 사용자에게 "잠시 후 재시도" 오류.
+- **직렬화 강제 방식**: Ollama 분기는 `.doOnNext(...).blockLast()`로 큐 워커 스레드를 실제로
+  점유한다 — `.subscribe()`(비동기)로 넘기면 워커 스레드가 즉시 반환돼 동시성=1이 무의미해진다.
+  토큰은 doOnNext에서 즉시 전송하므로 스트리밍 체감은 그대로다.
+- **세션당 in-flight 1개**: 새 메시지가 오면 이전 in-flight를 취소하고 새로 시작한다.
+  프론트(`ChatPage.tsx`)가 이미 스트리밍 중 입력을 막으므로 정상 단일 탭 사용에는 영향 없고,
+  멀티탭·API 오남용에 대한 방어선이다.
+- **취소**: `Future#cancel(true)`(Ollama, 큐 대기 중이면 실행 자체를 취소·실행 중이면 워커
+  스레드 인터럽트 → Reactor `blockLast()`가 감지해 구독 취소) / `Disposable#dispose()`(상용
+  provider) 둘 다 세션 하나의 취소 핸들로 통일 관리. 연결 종료(`afterConnectionClosed`)에서도
+  호출 — 연결이 끊겨도 계속 돌던 문제를 닫는다.
+- **세대(generation) 카운터**: "새 요청이 이전 걸 취소 → 새 취소 핸들 등록" 직후, 취소된
+  이전 작업의 정리 코드가 뒤늦게 실행되며 방금 등록한 새 핸들을 지우는 레이스를 막기 위해
+  둠. 종료 시점에 "내가 아직 최신 세대인지" 확인한 뒤에만 핸들을 지운다.
+- **검증**: `OllamaGenerationQueueTest`(동시성 1 + 대기열 상한 계약 — 실행/대기순번/거부/대기중
+  취소/실행중 취소 인터럽트, 순수 JDK 동시성 프리미티브만 사용), `ChatWebSocketHandlerAdmissionTest`
+  (세대 증가·이전 취소·낡은 세대 정리 무해·cancelInFlight 예외 흡수·isCancellation 판정 —
+  ChatClient fluent 체인 전체를 목으로 재현하는 대신 해당 로직만 package-private으로 열어
+  직접 검증). `./gradlew test` 전체 통과(116개).
+- **범위 밖(다음 항목)**: ETL의 Ollama 요약 호출(P1 #6)은 아직 이 큐를 안 거친다 — 채팅과
+  ETL이 여전히 같은 GPU를 두고 경합할 수 있다. P1 #6 착수 시 "ETL 전용 별도 큐" vs "이 큐를
+  공유"를 결정해야 한다 — 공유하면 진짜 GPU 전체 admission control이 되지만 ETL 응답성과
+  채팅 응답성이 서로 영향을 주게 된다. provider/model 비용 한도(P1 #7), SSE 수명 관리(P1 #8)도
+  아직 손대지 않음.
+- **실측 안 함**: 동시 다중 세션 부하로 실제 큐잉·거부·취소 동작을 재현하는 부하테스트는
+  이번 세션에서 하지 않았다(Ollama 미기동 환경) — `k6/chat-stream-test.js`로 다음 세션에
+  수동 검증 권장.
 
 ---
 

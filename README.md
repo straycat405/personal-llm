@@ -256,6 +256,7 @@ REINDEX_PDF_PATH='/path/to/문서.pdf' ./gradlew reindexDocument
 | `BTLLM_RAG_CHUNK_SIZE` | 800 | 색인 청크 크기(토큰). 변경 시 재색인 필요 |
 | `BTLLM_THINKING` | true | qwen3 thinking. 끄면 약 2.7배 빠르나 정확도 하락 |
 | `BTLLM_NUM_PREDICT` | 2048 | 출력 상한(폭주 방지용, 최적화 수단 아님) |
+| `BTLLM_GPU_QUEUE_CAPACITY` | 8 | Ollama 채팅 생성 대기열 상한(동시 실행 1건 제외). 가득 차면 새 요청은 즉시 거부 |
 | `PROVIDER_COMPARISON_REPETITIONS` | 1 | provider 비교 반복 횟수 |
 
 `providerComparisonExperiment`는 **상용 API 실제 과금이 발생한다.** 대상은 환경변수로 바꾼다.
