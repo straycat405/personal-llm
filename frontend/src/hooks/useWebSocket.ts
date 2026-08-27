@@ -13,7 +13,7 @@ export interface WsResponse {
 interface UseWebSocketOptions {
   conversationId: string | null
   provider: string          // [신규] LLM provider (예: "ollama", "claude")
-  model: string             // [신규] 모델명 (예: "qwen3:8b", "claude-sonnet-4-6")
+  model: string             // [신규] 모델명 (예: "qwen3:8b", "claude-sonnet-5")
   onMessage: (res: WsResponse) => void
   onOpen?: () => void
   onClose?: () => void

@@ -80,7 +80,7 @@ spring:
       api-key: ${SPRING_AI_ANTHROPIC_API_KEY:}
       chat:
         options:
-          model: claude-sonnet-4-6        # ChatClientFactory에서 요청별 오버라이드 가능
+          model: claude-sonnet-5           # ChatClientFactory에서 요청별 오버라이드 가능 [갱신 2026-08-27]
           temperature: 0.3                # 한국어 응답 일관성
 
   # ── Spring AI - Google Gemini ────────────────────────────────
@@ -92,7 +92,7 @@ spring:
         api-key: ${GOOGLE_AI_API_KEY:}       # 빈 문자열 = 미설정 → 자동 구성 비활성화
         chat:
           options:
-            model: gemini-2.5-flash           # ChatClientFactory에서 요청별 오버라이드 가능
+            model: gemini-3.7-flash           # ChatClientFactory에서 요청별 오버라이드 가능 [갱신 2026-08-27]
             temperature: 0.3                  # 낮은 온도 → 일관된 한국어 응답
 
   # ── Spring AI - OpenAI ─────────────────────────────────────
@@ -104,7 +104,7 @@ spring:
       api-key: ${SPRING_AI_OPENAI_API_KEY:}   # 빈 문자열 = 미설정 → 자동 구성 비활성화
       chat:
         options:
-          model: gpt-4o-mini      # ChatClientFactory에서 요청별 오버라이드 가능
+          model: gpt-5.6-luna     # ChatClientFactory에서 요청별 오버라이드 가능 [갱신 2026-08-27]
           temperature: 0.3        # 낮은 온도 → 일관된 한국어 응답
 
     chat:

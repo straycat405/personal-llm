@@ -34,7 +34,7 @@ export interface ChatHistoryResponse {
 // 백엔드 /api/v1/models 응답 구조와 1:1 대응
 
 export interface ModelInfo {
-  id: string          // 모델 ID (예: "claude-sonnet-4-6", "qwen3:8b")
+  id: string          // 모델 ID (예: "claude-sonnet-5", "qwen3:8b")
   name: string        // 표시 이름 (예: "Claude Sonnet 4.6")
   description: string // 짧은 설명 (예: "성능·속도 균형")
 }

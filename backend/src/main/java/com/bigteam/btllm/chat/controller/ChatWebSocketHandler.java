@@ -38,7 +38,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * [역할] WebSocket 연결 관리 및 LLM 스트리밍 응답 처리
  *
  * [설계 결정사항]
- * - provider·model을 URL 쿼리 파라미터로 수신: ?token=<jwt>&provider=claude&model=claude-sonnet-4-6
+ * - provider·model을 URL 쿼리 파라미터로 수신: ?token=<jwt>&provider=claude&model=claude-sonnet-5
  *   WS 연결 시 모델 고정 → 스트리밍 중 model 전환 없음 (model 변경 = WS 재연결)
  * - ChatClientFactory: provider:model 조합별 ChatClient 캐시 (Advisor 체인 공유)
  * - isToolCallText 필터: Ollama(qwen2.5/qwen3) 전용

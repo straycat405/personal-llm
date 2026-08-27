@@ -175,7 +175,7 @@ public class ChatClientFactory {
      * provider + model 조합의 ChatClient 반환 (캐시 적중 시 재사용)
      *
      * @param provider "ollama" | "claude"
-     * @param model    모델명 (예: "qwen3:8b", "claude-sonnet-4-6")
+     * @param model    모델명 (예: "qwen3:8b", "claude-sonnet-5")
      * @throws IllegalStateException provider 사용 불가 시 (예: API key 미설정)
      */
     public ChatClient get(String provider, String model) {
@@ -244,21 +244,21 @@ public class ChatClientFactory {
         if ("claude".equals(provider)) {
             builder.defaultOptions(
                 AnthropicChatOptions.builder()
-                    .model(model)       // 예: claude-opus-4-7, claude-sonnet-4-6
+                    .model(model)       // 예: claude-opus-5, claude-sonnet-5
                     .temperature(0.3)   // 낮은 온도 → 일관된 한국어 응답
                     .build()
             );
         } else if ("gemini".equals(provider)) {
             builder.defaultOptions(
                 GoogleGenAiChatOptions.builder()
-                    .model(model)       // 예: gemini-2.0-flash, gemini-2.5-flash
+                    .model(model)       // 예: gemini-3.5-flash-lite, gemini-3.7-flash
                     .temperature(0.3)
                     .build()
             );
         } else if ("openai".equals(provider)) {
             builder.defaultOptions(
                 OpenAiChatOptions.builder()
-                    .model(model)       // 예: gpt-4o-mini, gpt-4.1
+                    .model(model)       // 예: gpt-5.6-luna, gpt-5.6-sol
                     .temperature(0.3)
                     .build()
             );
